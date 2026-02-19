@@ -11,7 +11,17 @@ __pycache__/
 build/
 develop-eggs/
 dist/
-downloads/
+### Project-specific
+data/*.db
+data/*.db-*
+data/*.log
+downloads/**
+!downloads/.gitkeep
+reports/**
+!reports/.gitkeep
+
+# Distribution / packaging (original)
+downloads_pip/
 eggs/
 .eggs/
 lib/
