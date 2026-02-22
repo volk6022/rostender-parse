@@ -24,9 +24,18 @@ from src.db.repository import (
     init_db,
     upsert_customer,
     upsert_tender,
+    get_customers_by_status,
+    get_tenders_by_customer,
+    update_customer_status,
 )
-from src.scraper.active_tenders import extract_inn_from_page, search_active_tenders
+from src.scraper.active_tenders import (
+    extract_inn_from_page,
+    get_customer_name,
+    search_active_tenders,
+)
+from src.scraper.historical_search import search_historical_tenders
 from src.scraper.browser import create_browser, create_page
+from src.parser.html_protocol import analyze_tender_protocol
 
 
 def _configure_logging() -> None:
@@ -84,7 +93,7 @@ async def run() -> None:
             active_tenders = await search_active_tenders(page)
             logger.info(f"Найдено активных тендеров: {len(active_tenders)}")
 
-            async with await get_connection() as conn:
+            async with get_connection() as conn:
                 for t_data in active_tenders:
                     # 1.2 Для каждого тендера заходим внутрь для извлечения ИНН
                     logger.info(f"Обработка тендера {t_data['tender_id']}...")
@@ -96,8 +105,11 @@ async def run() -> None:
                         )
                         continue
 
-                    # 1.3 Сохраняем в БД
-                    await upsert_customer(conn, inn=inn)
+                    # 1.3 Извлекаем имя заказчика (страница уже загружена после extract_inn)
+                    customer_name = await get_customer_name(page)
+
+                    # 1.4 Сохраняем в БД
+                    await upsert_customer(conn, inn=inn, name=customer_name)
                     await upsert_tender(
                         conn,
                         tender_id=t_data["tender_id"],
@@ -111,8 +123,95 @@ async def run() -> None:
                     logger.success(f"Тендер {t_data['tender_id']} (ИНН {inn}) сохранен")
 
     # Шаг 2: Анализ истории заказчиков
-    # TODO: Этап 3 — scraper/historical_search.py + parser/*
-    logger.info("Этап 2: Анализ истории заказчиков — ещё не реализован")
+    logger.info("Этап 2: Поиск завершённых тендеров по ИНН заказчиков")
+    async with get_connection() as conn:
+        new_customers = await get_customers_by_status(conn, "new")
+    logger.info(f"Заказчиков со статусом 'new': {len(new_customers)}")
+
+    if new_customers:
+        async with create_browser() as browser:
+            async with create_page(browser) as page:
+                async with get_connection() as conn:
+                    for customer in new_customers:
+                        inn = customer["inn"]
+                        name = customer["name"] or inn
+                        logger.info(f"Обработка заказчика {name} (ИНН {inn})...")
+
+                        # 2.1 Обновляем статус → processing
+                        await update_customer_status(conn, inn, "processing")
+                        await conn.commit()
+
+                        try:
+                            # 2.2 Поиск завершённых тендеров
+                            historical = await search_historical_tenders(
+                                page, inn, limit=HISTORICAL_TENDERS_LIMIT
+                            )
+                            logger.info(
+                                f"Найдено завершённых тендеров для ИНН {inn}: "
+                                f"{len(historical)}"
+                            )
+
+                            # 2.3 Сохраняем завершённые тендеры в БД
+                            for t_data in historical:
+                                await upsert_tender(
+                                    conn,
+                                    tender_id=t_data["tender_id"],
+                                    customer_inn=inn,
+                                    url=t_data["url"],
+                                    title=t_data["title"],
+                                    price=t_data["price"],
+                                    tender_status="completed",
+                                )
+                            await conn.commit()
+
+                            # 2.4 Парсинг протоколов для каждого завершённого тендера
+                            logger.info(
+                                f"Парсинг протоколов для ИНН {inn} "
+                                f"({len(historical)} тендеров)..."
+                            )
+                            success_count = 0
+                            failed_count = 0
+
+                            for t_data in historical:
+                                try:
+                                    result = await analyze_tender_protocol(
+                                        page=page,
+                                        tender_id=t_data["tender_id"],
+                                        tender_url=t_data["url"],
+                                        customer_inn=inn,
+                                        conn=conn,
+                                    )
+                                    if result.parse_status == "success":
+                                        success_count += 1
+                                    else:
+                                        failed_count += 1
+                                except Exception as proto_exc:
+                                    logger.error(
+                                        f"Ошибка парсинга протокола тендера "
+                                        f"{t_data['tender_id']}: {proto_exc}"
+                                    )
+                                    failed_count += 1
+
+                            logger.info(
+                                f"ИНН {inn}: протоколы проанализированы — "
+                                f"success={success_count}, failed/skipped={failed_count}"
+                            )
+
+                            # 2.5 Обновляем статус → analyzed
+                            await update_customer_status(conn, inn, "analyzed")
+                            await conn.commit()
+                            logger.success(
+                                f"Заказчик {inn}: сохранено "
+                                f"{len(historical)} завершённых тендеров, "
+                                f"протоколов проанализировано: {success_count}"
+                            )
+
+                        except Exception as exc:
+                            logger.error(f"Ошибка при обработке ИНН {inn}: {exc}")
+                            await update_customer_status(conn, inn, "error")
+                            await conn.commit()
+    else:
+        logger.info("Нет заказчиков для анализа (статус 'new')")
 
     # Шаг 3: Расширенный поиск по интересным заказчикам
     # TODO: Этап 7

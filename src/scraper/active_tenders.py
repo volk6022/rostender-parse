@@ -1,7 +1,7 @@
 """Модуль для поиска активных тендеров на rostender.info."""
 
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 from loguru import logger
@@ -10,14 +10,88 @@ from playwright.async_api import Page
 from src.config import (
     EXCLUDE_KEYWORDS,
     MIN_PRICE_ACTIVE,
+    SEARCH_DATE_FROM,
+    SEARCH_DATE_TO,
     SEARCH_KEYWORDS,
+    SELECTORS,
 )
 from src.scraper.browser import BASE_URL, polite_wait, safe_goto
+
+# Короткий алиас для читаемости.
+S = SELECTORS
+
+
+async def parse_tenders_on_page(
+    page: Page,
+    *,
+    tender_status: str = "active",
+) -> list[dict[str, Any]]:
+    """
+    Парсит карточки тендеров на текущей странице результатов.
+
+    Args:
+        page: Playwright-страница с результатами поиска.
+        tender_status: Статус для записи в результат ("active" / "completed").
+
+    Реальная структура HTML (верифицировано 19.02.2026):
+      <article class="tender-row row" id="90147690">
+        <a class="description tender-info__description tender-info__link"
+           href="/region/.../90147690-tender-...">Заголовок</a>
+        <div class="starting-price__price starting-price--price">445 000 ₽</div>
+      </article>
+    """
+    tenders: list[dict[str, Any]] = []
+
+    rows = await page.query_selector_all(S["tender_card"])
+    if not rows:
+        return tenders
+
+    logger.debug(f"Карточек на странице: {len(rows)}")
+
+    for row in rows:
+        try:
+            # Tender ID — атрибут id у <article>
+            tender_id = await row.get_attribute("id")
+            if not tender_id:
+                continue
+
+            # Ссылка и заголовок
+            link_el = await row.query_selector(
+                S["tender_link"]
+            ) or await row.query_selector(S["tender_link_alt"])
+            if not link_el:
+                continue
+
+            title = await link_el.inner_text()
+            url = await link_el.get_attribute("href")
+            if url and not url.startswith("http"):
+                url = f"{BASE_URL}{url}"
+
+            # Цена
+            price_el = await row.query_selector(S["tender_price"])
+            price_text = await price_el.inner_text() if price_el else "0"
+            # Убираем всё кроме цифр и точки: "445 000 ₽" -> "445000"
+            price = float(re.sub(r"[^\d.]", "", price_text.replace(",", ".")) or 0)
+
+            tenders.append(
+                {
+                    "tender_id": tender_id,
+                    "title": title.strip(),
+                    "url": url,
+                    "price": price,
+                    "status": tender_status,
+                }
+            )
+        except Exception as e:
+            logger.error(f"Ошибка при парсинге карточки тендера: {e}")
+
+    return tenders
 
 
 async def search_active_tenders(page: Page) -> list[dict[str, Any]]:
     """
     Выполняет поиск активных тендеров по фильтрам из ТЗ.
+    Обходит все страницы пагинации.
     Возвращает список словарей с данными тендеров.
     """
     logger.info("Поиск активных тендеров на rostender.info...")
@@ -28,40 +102,50 @@ async def search_active_tenders(page: Page) -> list[dict[str, Any]]:
     # 2. Заполняем фильтры
     # Ключевые слова
     keywords_str = ", ".join(SEARCH_KEYWORDS)
-    await page.fill("#keywords", keywords_str)
+    await page.fill(S["search_keywords_input"], keywords_str)
 
     # Исключения
     exclude_str = ", ".join(EXCLUDE_KEYWORDS)
-    await page.fill("#exceptions", exclude_str)
+    await page.fill(S["search_exceptions_input"], exclude_str)
 
-    # Цена от (используем дисплейное поле, Playwright сам обработает маску или заполним скрытое)
-    await page.fill("#min_price-disp", str(MIN_PRICE_ACTIVE))
-
-    # Скрывать без цены
-    await page.check("#hide_price")
-
-    # Этап: Прием заявок (значение 10).
-    # В расширенном поиске по умолчанию выбраны почти все, кроме планируемых.
-    # Нам нужно убедиться, что выбрано только "Прием заявок".
-    # Сначала снимем все, потом выберем нужный.
-    # Поскольку это кастомный селект (Chosen), проще взаимодействовать с ним через evaluate
+    # Цена от: используем скрытое поле напрямую через JS,
+    # т.к. disp-поле имеет maskMoney-плагин, который может мешать вводу.
     await page.evaluate(
         """
-        (val) => {
-            const select = document.querySelector('#states');
+        ([val, selPrice, selDisp]) => {
+            document.querySelector(selPrice).value = val;
+            const disp = document.querySelector(selDisp);
+            if (disp && typeof jQuery !== 'undefined' && jQuery(disp).maskMoney) {
+                jQuery(disp).maskMoney('mask', parseFloat(val));
+            } else {
+                disp.value = val;
+            }
+        }
+    """,
+        [str(MIN_PRICE_ACTIVE), S["search_min_price"], S["search_min_price_disp"]],
+    )
+
+    # Скрывать без цены
+    await page.check(S["search_hide_price"])
+
+    # Этап: Прием заявок (значение "10").
+    # Используем jQuery + Chosen plugin.
+    await page.evaluate(
+        """
+        ([val, sel]) => {
+            const select = document.querySelector(sel);
             Array.from(select.options).forEach(opt => opt.selected = (opt.value == val));
             $(select).trigger('chosen:updated');
         }
     """,
-        "10",
+        ["10", S["search_states"]],
     )
 
-    # Способ размещения (placement_ways): исключить Аукционы (1) и Ед. поставщик (28)
-    # По умолчанию выбраны все.
+    # Способ размещения: исключить Аукционы (1) и Ед. поставщик (28)
     await page.evaluate(
         """
-        (exclude_vals) => {
-            const select = document.querySelector('#placement_ways');
+        ([exclude_vals, sel]) => {
+            const select = document.querySelector(sel);
             Array.from(select.options).forEach(opt => {
                 if (exclude_vals.includes(opt.value)) {
                     opt.selected = false;
@@ -72,76 +156,56 @@ async def search_active_tenders(page: Page) -> list[dict[str, Any]]:
             $(select).trigger('chosen:updated');
         }
     """,
-        ["1", "28"],
+        [["1", "28"], S["search_placement_ways"]],
     )
 
-    # Дата: поиск за сегодня (как в ТЗ пример 10.02.2026 по 10.02.2026)
-    # Для MVP установим текущую дату
-    today = datetime.now().strftime("%d.%m.%Y")
-    await page.fill("#tender-start-date-from", today)
-    await page.fill("#tender-start-date-to", today)
+    # Дата публикации: из конфига или «сегодня»
+    date_from = SEARCH_DATE_FROM or datetime.now().strftime("%d.%m.%Y")
+    date_to = SEARCH_DATE_TO or datetime.now().strftime("%d.%m.%Y")
+    await page.fill(S["search_date_from"], date_from)
+    await page.fill(S["search_date_to"], date_to)
+    logger.debug("Фильтр дат: {} — {}", date_from, date_to)
 
     # 3. Нажимаем "Искать"
-    await page.click("#start-search-button")
+    await page.click(S["search_button"])
     await page.wait_for_load_state("networkidle")
 
-    # 4. Собираем результаты
-    tenders = []
+    # 4. Собираем результаты со всех страниц (пагинация)
+    all_tenders: list[dict[str, Any]] = []
+    page_num = 1
 
-    # Проверяем, есть ли результаты
-    if await page.query_selector(".search-results") is None:
-        logger.warning("Результаты поиска не найдены")
-        return tenders
+    while True:
+        logger.info(f"Парсинг страницы результатов #{page_num}...")
 
-    # Собираем ссылки на тендеры со страницы результатов
-    # На rostender.info карточки тендеров обычно имеют класс .tender-row или похожий
-    # В результатах поиска это ссылки внутри .search-results__item или h2/h3
-    rows = await page.query_selector_all(".tender-row")
-    if not rows:
-        # Альтернативный селектор для некоторых версий верстки
-        rows = await page.query_selector_all(".search-results__item")
+        # Проверяем, есть ли карточки тендеров на странице
+        rows = await page.query_selector_all(S["tender_card"])
+        if not rows:
+            if page_num == 1:
+                logger.warning("Результаты поиска не найдены")
+            break
 
-    logger.info(f"Найдено карточек на странице: {len(rows)}")
+        # Парсим текущую страницу
+        page_tenders = await parse_tenders_on_page(page)
+        all_tenders.extend(page_tenders)
+        logger.info(
+            f"Страница {page_num}: найдено {len(page_tenders)} тендеров "
+            f"(всего: {len(all_tenders)})"
+        )
 
-    for row in rows:
-        try:
-            link_el = await row.query_selector(
-                "a.description"
-            ) or await row.query_selector("a[href*='/tender/']")
-            if not link_el:
-                continue
+        # Проверяем наличие кнопки "Следующая"
+        next_btn = await page.query_selector(S["pagination_next"])
+        if not next_btn:
+            logger.debug("Следующей страницы нет — пагинация завершена")
+            break
 
-            title = await link_el.inner_text()
-            url = await link_el.get_attribute("href")
-            if not url.startswith("http"):
-                url = f"{BASE_URL}{url}"
+        # Переходим на следующую страницу
+        await next_btn.click()
+        await page.wait_for_load_state("networkidle")
+        await polite_wait()
+        page_num += 1
 
-            # Извлекаем ID из URL
-            # Пример: /tender/89869707-...
-            match = re.search(r"/tender/(\d+)", url)
-            tender_id = match.group(1) if match else url.split("/")[-1].split("-")[0]
-
-            # Цена
-            price_el = await row.query_selector(
-                ".tender-row__price"
-            ) or await row.query_selector(".price")
-            price_text = await price_el.inner_text() if price_el else "0"
-            # Очистка цены от мусора
-            price = float(re.sub(r"[^\d.]", "", price_text.replace(",", ".")) or 0)
-
-            tenders.append(
-                {
-                    "tender_id": tender_id,
-                    "title": title.strip(),
-                    "url": url,
-                    "price": price,
-                    "status": "active",
-                }
-            )
-        except Exception as e:
-            logger.error(f"Ошибка при парсинге карточки тендера: {e}")
-
-    return tenders
+    logger.info(f"Итого найдено активных тендеров: {len(all_tenders)}")
+    return all_tenders
 
 
 async def extract_inn_from_page(page: Page, tender_url: str) -> str | None:
@@ -151,11 +215,8 @@ async def extract_inn_from_page(page: Page, tender_url: str) -> str | None:
     await safe_goto(page, tender_url)
     await polite_wait()
 
-    # Поиск ИНН. Как выяснилось, он в атрибуте 'inn' кнопки .toggle-counterparty
-    # Даже если он пустой для неавторизованных, мы попробуем найти его в тексте страницы
-    # или через переход в 'Анализ заказчика'
-
-    btn = await page.query_selector(".toggle-counterparty")
+    # Поиск ИНН в атрибуте 'inn' кнопки
+    btn = await page.query_selector(S["inn_button"])
     if btn:
         inn = await btn.get_attribute("inn")
         if inn and inn.strip():
@@ -167,28 +228,41 @@ async def extract_inn_from_page(page: Page, tender_url: str) -> str | None:
     if inn_match:
         return inn_match.group(1)
 
-    # Попробуем найти ссылку на ЕИС (zakupki.gov.ru), там ИНН часто есть в URL или на странице
-    eis_link_el = await page.query_selector("a[href*='zakupki.gov.ru']")
+    # Попробуем найти ссылку на ЕИС (zakupki.gov.ru)
+    # TODO: Шаг 5 (eis_fallback.py) — реализовать переход по ссылке ЕИС
+    # для извлечения ИНН и протоколов с zakupki.gov.ru.
+    eis_link_el = await page.query_selector(S["eis_link"])
     if eis_link_el:
         eis_url = await eis_link_el.get_attribute("href")
-        # В URL ЕИС часто есть regNumber, но не ИНН. Но это задел на будущее.
-        pass
+        logger.debug(
+            f"Найдена ЕИС-ссылка: {eis_url} (фоллбэк не реализован, см. Шаг 5)"
+        )
 
     logger.warning(f"ИНН не найден для тендера: {tender_url}")
     return None
 
 
 async def get_customer_name(page: Page) -> str | None:
-    """Извлекает название организации со страницы тендера."""
-    # Ищем блок 'Организатор закупки'
-    label_el = await page.get_by_text("Организатор закупки").first
-    if label_el:
-        # Название обычно в следующем элементе или в родителе
-        # Но для неавторизованных там заглушка.
-        # Попробуем найти любой текст, похожий на название (ООО, АО, МКУ...)
-        content = await page.content()
-        # Очень грубый поиск названия организации
-        name_match = re.search(r'(?:ООО|АО|ПАО|МКУ|ГБУ|ФГУП)\s+"[^"]+"', content)
-        if name_match:
-            return name_match.group(0)
+    """
+    Извлекает название организации со страницы тендера.
+    Вызывать после перехода на страницу тендера (extract_inn_from_page).
+    """
+    content = await page.content()
+
+    # Ищем типичные формы названий организаций в кавычках
+    name_match = re.search(
+        r'(?:ООО|ОАО|АО|ПАО|ЗАО|МКУ|МБУ|ГБУ|ФГУП|ФГБУ|МУП|ГУП|ГБУЗ|БУ)\s+"[^"]+"',
+        content,
+    )
+    if name_match:
+        return name_match.group(0)
+
+    # Альтернативный поиск: блок с заголовком "Организатор" или "Заказчик"
+    name_match = re.search(
+        r"(?:Организатор|Заказчик)[^<]*?<[^>]*>([^<]{5,100})</[^>]*>",
+        content,
+    )
+    if name_match:
+        return name_match.group(1).strip()
+
     return None

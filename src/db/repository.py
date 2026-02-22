@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
+
 import aiosqlite
 from loguru import logger
 
@@ -9,25 +12,32 @@ from src.config import DB_PATH, DATA_DIR
 from src.db.schema import SCHEMA_SQL
 
 
-async def get_connection() -> aiosqlite.Connection:
-    """Открыть соединение с БД и включить WAL + FK."""
+@asynccontextmanager
+async def get_connection() -> AsyncGenerator[aiosqlite.Connection, None]:
+    """Открыть соединение с БД (async context manager).
+
+    Usage::
+
+        async with get_connection() as conn:
+            await conn.execute(...)
+    """
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     conn = await aiosqlite.connect(DB_PATH)
     conn.row_factory = aiosqlite.Row
     await conn.execute("PRAGMA journal_mode=WAL")
     await conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    try:
+        yield conn
+    finally:
+        await conn.close()
 
 
 async def init_db() -> None:
     """Создать все таблицы (если не существуют)."""
-    conn = await get_connection()
-    try:
+    async with get_connection() as conn:
         await conn.executescript(SCHEMA_SQL)
         await conn.commit()
         logger.info("БД инициализирована: {}", DB_PATH)
-    finally:
-        await conn.close()
 
 
 # ── Customers ───────────────────────────────────────────────────────────────────
