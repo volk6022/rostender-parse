@@ -27,6 +27,8 @@ from src.db.repository import (
     get_customers_by_status,
     get_tenders_by_customer,
     update_customer_status,
+    insert_result,
+    get_protocol_analyses_for_customer,
 )
 from src.scraper.active_tenders import (
     extract_inn_from_page,
@@ -35,7 +37,9 @@ from src.scraper.active_tenders import (
 )
 from src.scraper.historical_search import search_historical_tenders
 from src.scraper.browser import create_browser, create_page
+from src.scraper.eis_fallback import fallback_extract_inn
 from src.parser.html_protocol import analyze_tender_protocol
+from src.analyzer.competition import calculate_metrics, log_metrics
 
 
 def _configure_logging() -> None:
@@ -98,6 +102,10 @@ async def run() -> None:
                     # 1.2 Для каждого тендера заходим внутрь для извлечения ИНН
                     logger.info(f"Обработка тендера {t_data['tender_id']}...")
                     inn = await extract_inn_from_page(page, t_data["url"])
+
+                    if not inn:
+                        logger.info("ИНН не найден на rostender.info, пробуем ЕИС...")
+                        inn = await fallback_extract_inn(page, t_data["url"])
 
                     if not inn:
                         logger.warning(
@@ -197,7 +205,35 @@ async def run() -> None:
                                 f"success={success_count}, failed/skipped={failed_count}"
                             )
 
-                            # 2.5 Обновляем статус → analyzed
+                            analyses = await get_protocol_analyses_for_customer(
+                                conn, inn
+                            )
+                            metrics = calculate_metrics(analyses)
+                            log_metrics(inn, metrics)
+
+                            if metrics.is_determinable:
+                                active_tenders_for_inn = await get_tenders_by_customer(
+                                    conn, inn, tender_status="active"
+                                )
+                                for active_tender in active_tenders_for_inn:
+                                    await insert_result(
+                                        conn,
+                                        active_tender_id=active_tender["tender_id"],
+                                        customer_inn=inn,
+                                        total_historical=metrics.total_historical,
+                                        total_analyzed=metrics.total_analyzed,
+                                        total_skipped=metrics.total_skipped,
+                                        low_competition_count=metrics.low_competition_count,
+                                        competition_ratio=metrics.competition_ratio,
+                                        is_interesting=metrics.is_interesting,
+                                        source="primary",
+                                    )
+                                await conn.commit()
+                                logger.success(
+                                    f"Результаты сохранены для INN {inn}: "
+                                    f"is_interesting={metrics.is_interesting}"
+                                )
+
                             await update_customer_status(conn, inn, "analyzed")
                             await conn.commit()
                             logger.success(
