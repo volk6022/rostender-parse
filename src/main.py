@@ -14,6 +14,7 @@ from src.config import (
     SEARCH_KEYWORDS,
     EXCLUDE_KEYWORDS,
     MIN_PRICE_ACTIVE,
+    MIN_PRICE_RELATED,
     HISTORICAL_TENDERS_LIMIT,
     MAX_PARTICIPANTS_THRESHOLD,
     COMPETITION_RATIO_THRESHOLD,
@@ -29,11 +30,16 @@ from src.db.repository import (
     update_customer_status,
     insert_result,
     get_protocol_analyses_for_customer,
+    get_interesting_customers,
+    tender_exists,
+    result_exists,
+    get_latest_protocol_analyses,
 )
 from src.scraper.active_tenders import (
     extract_inn_from_page,
     get_customer_name,
     search_active_tenders,
+    search_tenders_by_inn,
 )
 from src.scraper.historical_search import search_historical_tenders
 from src.scraper.browser import create_browser, create_page
@@ -249,9 +255,178 @@ async def run() -> None:
     else:
         logger.info("Нет заказчиков для анализа (статус 'new')")
 
-    # Шаг 3: Расширенный поиск по интересным заказчикам
-    # TODO: Этап 7
-    logger.info("Этап 3: Расширенный поиск — ещё не реализован")
+    # Шаг 3: Расширенный поиск по интересным заказчикам (Этап 7)
+    logger.info("Этап 3: Расширенный поиск по интересным заказчикам")
+
+    async with get_connection() as conn:
+        interesting_customers = await get_interesting_customers(conn)
+    logger.info(
+        f"Интересных заказчиков для расширенного поиска: {len(interesting_customers)}"
+    )
+
+    if interesting_customers:
+        async with create_browser() as browser:
+            async with create_page(browser) as page:
+                for customer in interesting_customers:
+                    inn = customer["inn"]
+                    name = customer["name"] or inn
+                    logger.info(
+                        f"Расширенный поиск для заказчика {name} (ИНН {inn})..."
+                    )
+
+                    # 3.1 Найти ВСЕ активные тендеры заказчика (цена ≥ 2M)
+                    try:
+                        extended_tenders = await search_tenders_by_inn(
+                            page,
+                            inn,
+                            min_price=MIN_PRICE_RELATED,
+                        )
+                    except Exception as search_err:
+                        logger.error(
+                            f"Ошибка поиска тендеров для ИНН {inn}: {search_err}"
+                        )
+                        continue
+
+                    if not extended_tenders:
+                        logger.info(f"Для ИНН {inn} новых тендеров ≥ 2M не найдено")
+                        continue
+
+                    logger.info(
+                        f"Найдено {len(extended_tenders)} новых тендеров для ИНН {inn}"
+                    )
+
+                    async with get_connection() as conn:
+                        # Обновляем статус заказчика на processing
+                        await update_customer_status(conn, inn, "extended_processing")
+                        await conn.commit()
+
+                        for t_data in extended_tenders:
+                            # Проверяем, не обрабатывали ли мы уже этот тендер
+                            if await tender_exists(conn, t_data["tender_id"]):
+                                logger.debug(
+                                    f"Тендер {t_data['tender_id']} уже в базе, пропускаем"
+                                )
+                                continue
+
+                            # Bug #2 fix: проверяем, нет ли уже результата для этого тендера
+                            if await result_exists(conn, t_data["tender_id"]):
+                                logger.debug(
+                                    f"Результат для тендера {t_data['tender_id']} "
+                                    f"уже существует, пропускаем"
+                                )
+                                continue
+
+                            # 3.2 Сохраняем новый активный тендер
+                            logger.info(
+                                f"Обработка нового тендера {t_data['tender_id']}..."
+                            )
+                            await upsert_tender(
+                                conn,
+                                tender_id=t_data["tender_id"],
+                                customer_inn=inn,
+                                url=t_data["url"],
+                                title=t_data["title"],
+                                price=t_data["price"],
+                                tender_status="active",
+                            )
+                            await conn.commit()
+
+                            # 3.3 Анализ истории для нового тендера (как в Этапе 2)
+                            new_historical_ids: list[str] = []
+
+                            try:
+                                # Поиск завершённых тендеров
+                                historical = await search_historical_tenders(
+                                    page, inn, limit=HISTORICAL_TENDERS_LIMIT
+                                )
+
+                                if not historical:
+                                    logger.warning(
+                                        f"Для тендера {t_data['tender_id']} "
+                                        f"исторических тендеров не найдено"
+                                    )
+                                    continue
+
+                                for h_data in historical:
+                                    await upsert_tender(
+                                        conn,
+                                        tender_id=h_data["tender_id"],
+                                        customer_inn=inn,
+                                        url=h_data["url"],
+                                        title=h_data["title"],
+                                        price=h_data["price"],
+                                        tender_status="completed",
+                                    )
+                                    new_historical_ids.append(h_data["tender_id"])
+                                await conn.commit()
+
+                                # Парсинг протоколов
+                                success_count = 0
+                                failed_count = 0
+
+                                for h_data in historical:
+                                    try:
+                                        result = await analyze_tender_protocol(
+                                            page=page,
+                                            tender_id=h_data["tender_id"],
+                                            tender_url=h_data["url"],
+                                            customer_inn=inn,
+                                            conn=conn,
+                                        )
+                                        if result.parse_status == "success":
+                                            success_count += 1
+                                        else:
+                                            failed_count += 1
+                                    except Exception as proto_exc:
+                                        logger.error(
+                                            f"Ошибка парсинга протокола тендера "
+                                            f"{h_data['tender_id']}: {proto_exc}"
+                                        )
+                                        failed_count += 1
+
+                                # Bug #1 fix: Расчёт метрик ТОЛЬКО для вновь проанализированных тендеров
+                                # Bug #3 fix: Передаём только новые tender_ids
+                                if new_historical_ids:
+                                    analyses = await get_latest_protocol_analyses(
+                                        conn, inn, new_historical_ids
+                                    )
+                                else:
+                                    analyses = []
+
+                                metrics = calculate_metrics(analyses)
+                                log_metrics(inn, metrics)
+
+                                # Bug #2 fix: Сохраняем результат только если его ещё нет
+                                if metrics.is_determinable:
+                                    await insert_result(
+                                        conn,
+                                        active_tender_id=t_data["tender_id"],
+                                        customer_inn=inn,
+                                        total_historical=metrics.total_historical,
+                                        total_analyzed=metrics.total_analyzed,
+                                        total_skipped=metrics.total_skipped,
+                                        low_competition_count=metrics.low_competition_count,
+                                        competition_ratio=metrics.competition_ratio,
+                                        is_interesting=metrics.is_interesting,
+                                        source="extended",
+                                    )
+                                    await conn.commit()
+                                    logger.success(
+                                        f"Результат для тендера {t_data['tender_id']} "
+                                        f"(source=extended): is_interesting={metrics.is_interesting}"
+                                    )
+
+                            except Exception as exc:
+                                logger.error(
+                                    f"Ошибка при расширенном анализе тендера "
+                                    f"{t_data['tender_id']}: {exc}"
+                                )
+
+                        # Bug #4 fix: Обновляем статус заказчика после завершения
+                        await update_customer_status(conn, inn, "extended_analyzed")
+                        await conn.commit()
+
+    logger.info("Этап 3: Расширенный поиск завершён")
 
     # Шаг 4: Формирование отчёта
     # TODO: Этап 8 — reporter/*

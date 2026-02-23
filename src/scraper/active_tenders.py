@@ -10,6 +10,7 @@ from playwright.async_api import Page
 from src.config import (
     EXCLUDE_KEYWORDS,
     MIN_PRICE_ACTIVE,
+    MIN_PRICE_RELATED,
     SEARCH_DATE_FROM,
     SEARCH_DATE_TO,
     SEARCH_KEYWORDS,
@@ -251,7 +252,7 @@ async def get_customer_name(page: Page) -> str | None:
 
     # Ищем типичные формы названий организаций в кавычках
     name_match = re.search(
-        r'(?:ООО|ОАО|АО|ПАО|ЗАО|МКУ|МБУ|ГБУ|ФГУП|ФГБУ|МУП|ГУП|ГБУЗ|БУ)\s+"[^"]+"',
+        r'(?:ООО|OAO.АО|пAO|ЗАО|MКУ|MБУ|ГБУ|ФГУП|ФГБУ|MУП|ГУП|ГБУЗ|BУ)\s+"[^"]+"',
         content,
     )
     if name_match:
@@ -266,3 +267,119 @@ async def get_customer_name(page: Page) -> str | None:
         return name_match.group(1).strip()
 
     return None
+
+
+async def search_tenders_by_inn(
+    page: Page,
+    inn: str,
+    min_price: int = MIN_PRICE_RELATED,
+) -> list[dict[str, Any]]:
+    """
+    Поиск активных тендеров конкретного заказчика по ИНН.
+
+    Args:
+        page: Playwright-страница.
+        inn: ИНН заказчика.
+        min_price: Минимальная цена (по умолчанию 2M для расширенного поиска).
+
+    Returns:
+        Список словарей с данными тендеров.
+    """
+    logger.info(f"Поиск активных тендеров для ИНН {inn} (мин. цена: {min_price})...")
+
+    # 1. Переходим на страницу расширенного поиска
+    await safe_goto(page, f"{BASE_URL}/extsearch/advanced")
+
+    # 2. Заполняем фильтры
+    # ИНН заказчика
+    await page.fill(S["search_customers_input"], inn)
+
+    # Ключевые слова (общие из SEARCH_KEYWORDS)
+    keywords_str = ", ".join(SEARCH_KEYWORDS)
+    await page.fill(S["search_keywords_input"], keywords_str)
+
+    # Исключения
+    exclude_str = ", ".join(EXCLUDE_KEYWORDS)
+    await page.fill(S["search_exceptions_input"], exclude_str)
+
+    # Цена от
+    await page.evaluate(
+        """
+        ([val, selPrice, selDisp]) => {
+            document.querySelector(selPrice).value = val;
+            const disp = document.querySelector(selDisp);
+            if (disp && typeof jQuery !== 'undefined' && jQuery(disp).maskMoney) {
+                jQuery(disp).maskMoney('mask', parseFloat(val));
+            } else {
+                disp.value = val;
+            }
+        }
+    """,
+        [str(min_price), S["search_min_price"], S["search_min_price_disp"]],
+    )
+
+    # Скрывать без цены
+    await page.check(S["search_hide_price"])
+
+    # Этап: Прием заявок (значение "10")
+    await page.evaluate(
+        """
+        ([val, sel]) => {
+            const select = document.querySelector(sel);
+            Array.from(select.options).forEach(opt => opt.selected = (opt.value == val));
+            $(select).trigger('chosen:updated');
+        }
+    """,
+        ["10", S["search_states"]],
+    )
+
+    # Способ размещения: исключить Аукционы (1) и Ед. поставщик (28)
+    await page.evaluate(
+        """
+        ([exclude_vals, sel]) => {
+            const select = document.querySelector(sel);
+            Array.from(select.options).forEach(opt => {
+                if (exclude_vals.includes(opt.value)) {
+                    opt.selected = false;
+                } else {
+                    opt.selected = true;
+                }
+            });
+            $(select).trigger('chosen:updated');
+        }
+    """,
+        [["1", "28"], S["search_placement_ways"]],
+    )
+
+    # 3. Нажимаем "Искать"
+    await page.click(S["search_button"])
+    await page.wait_for_load_state("networkidle")
+
+    # 4. Собираем результаты со всех страниц
+    all_tenders: list[dict[str, Any]] = []
+    page_num = 1
+
+    while True:
+        logger.debug(f"Парсинг страницы #{page_num} для ИНН {inn}...")
+
+        rows = await page.query_selector_all(S["tender_card"])
+        if not rows:
+            if page_num == 1:
+                logger.info(f"Тендеры для ИНН {inn} не найдены")
+            break
+
+        page_tenders = await parse_tenders_on_page(page)
+        all_tenders.extend(page_tenders)
+
+        # Следующая страница
+        next_btn = await page.query_selector(S["pagination_next"])
+        if not next_btn:
+            break
+
+        await next_btn.click()
+        await page.wait_for_load_state("networkidle")
+        await polite_wait()
+        page_num += 1
+
+    logger.info(f"Для ИНН {inn} найдено тендеров: {len(all_tenders)}")
+    return all_tenders

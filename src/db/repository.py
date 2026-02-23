@@ -262,3 +262,65 @@ async def get_interesting_results(conn: aiosqlite.Connection) -> list[aiosqlite.
         """
     )
     return await cursor.fetchall()
+
+
+async def get_interesting_customers(
+    conn: aiosqlite.Connection,
+) -> list[aiosqlite.Row]:
+    """Получить список уникальных ИНН заказчиков с интересными результатами."""
+    cursor = await conn.execute(
+        """
+        SELECT DISTINCT c.inn, c.name
+        FROM customers c
+        JOIN results r ON c.inn = r.customer_inn
+        WHERE r.is_interesting = 1
+        """
+    )
+    return await cursor.fetchall()
+
+
+async def tender_exists(
+    conn: aiosqlite.Connection,
+    tender_id: str,
+) -> bool:
+    """Проверить, существует ли тендер в базе."""
+    cursor = await conn.execute(
+        "SELECT 1 FROM tenders WHERE tender_id = ?",
+        (tender_id,),
+    )
+    row = await cursor.fetchone()
+    return row is not None
+
+
+async def result_exists(
+    conn: aiosqlite.Connection,
+    active_tender_id: str,
+) -> bool:
+    """Проверить, существует ли результат для тендера в базе."""
+    cursor = await conn.execute(
+        "SELECT 1 FROM results WHERE active_tender_id = ?",
+        (active_tender_id,),
+    )
+    row = await cursor.fetchone()
+    return row is not None
+
+
+async def get_latest_protocol_analyses(
+    conn: aiosqlite.Connection,
+    customer_inn: str,
+    tender_ids: list[str],
+) -> list[aiosqlite.Row]:
+    """Получить результаты анализа протоколов только для указанных тендеров."""
+    if not tender_ids:
+        return []
+    placeholders = ", ".join("?" * len(tender_ids))
+    cursor = await conn.execute(
+        f"""
+        SELECT pa.* FROM protocol_analysis pa
+        JOIN tenders t ON pa.tender_id = t.tender_id
+        WHERE t.customer_inn = ? AND pa.tender_id IN ({placeholders})
+        ORDER BY pa.analyzed_at DESC
+        """,
+        (customer_inn, *tender_ids),
+    )
+    return await cursor.fetchall()
