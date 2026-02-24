@@ -360,7 +360,7 @@ async def search_tenders_by_inn(
     page_num = 1
 
     while True:
-        logger.debug(f"Парсинг страницы #{page_num} для ИНН {inn}...")
+        logger.info(f"Парсинг страницы #{page_num} для ИНН {inn}...")
 
         rows = await page.query_selector_all(S["tender_card"])
         if not rows:
@@ -370,10 +370,15 @@ async def search_tenders_by_inn(
 
         page_tenders = await parse_tenders_on_page(page)
         all_tenders.extend(page_tenders)
+        logger.info(
+            f"Страница {page_num}: найдено {len(page_tenders)} тендеров "
+            f"(всего: {len(all_tenders)})"
+        )
 
         # Следующая страница
         next_btn = await page.query_selector(S["pagination_next"])
         if not next_btn:
+            logger.debug("Следующей страницы нет — пагинация завершена")
             break
 
         await next_btn.click()

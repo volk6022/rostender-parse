@@ -5,7 +5,7 @@ SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS customers (
     inn             TEXT PRIMARY KEY,
     name            TEXT,
-    status          TEXT DEFAULT 'new',   -- new | processing | analyzed | error
+    status          TEXT DEFAULT 'new',   -- new | processing | extended_processing | extended_analyzed | analyzed | error
     last_analysis_date DATETIME,
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
