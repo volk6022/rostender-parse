@@ -45,7 +45,10 @@ from src.scraper.active_tenders import (
     search_active_tenders,
     search_tenders_by_inn,
 )
-from src.scraper.historical_search import search_historical_tenders
+from src.scraper.historical_search import (
+    search_historical_tenders,
+    extract_keywords_from_title,
+)
 from src.scraper.browser import create_browser, create_page
 from src.scraper.eis_fallback import fallback_extract_inn
 from src.parser.html_protocol import analyze_tender_protocol
@@ -162,75 +165,109 @@ async def run() -> None:
                         await conn.commit()
 
                         try:
-                            # 2.2 Поиск завершённых тендеров
-                            historical = await search_historical_tenders(
-                                page, inn, limit=HISTORICAL_TENDERS_LIMIT
-                            )
-                            logger.info(
-                                f"Найдено завершённых тендеров для ИНН {inn}: "
-                                f"{len(historical)}"
+                            # 2.2 Получаем активные тендеры заказчика для анализа
+                            active_tenders_list = await get_tenders_by_customer(
+                                conn, inn, tender_status="active"
                             )
 
-                            # 2.3 Сохраняем завершённые тендеры в БД
-                            for t_data in historical:
-                                await upsert_tender(
-                                    conn,
-                                    tender_id=t_data["tender_id"],
-                                    customer_inn=inn,
-                                    url=t_data["url"],
-                                    title=t_data["title"],
-                                    price=t_data["price"],
-                                    tender_status="completed",
+                            if not active_tenders_list:
+                                logger.info(f"Нет активных тендеров для ИНН {inn}")
+                                await update_customer_status(conn, inn, "analyzed")
+                                await conn.commit()
+                                continue
+
+                            # 2.3 Для каждого активного тендера - свой анализ по ключевым словам из заголовка
+                            for active_tender in active_tenders_list:
+                                tender_id = active_tender["tender_id"]
+                                tender_title = active_tender["title"] or ""
+
+                                logger.info(
+                                    f"Анализ тендера {tender_id}: '{tender_title[:50]}...'"
                                 )
-                            await conn.commit()
 
-                            # 2.4 Парсинг протоколов для каждого завершённого тендера
-                            logger.info(
-                                f"Парсинг протоколов для ИНН {inn} "
-                                f"({len(historical)} тендеров)..."
-                            )
-                            success_count = 0
-                            failed_count = 0
+                                # Извлекаем ключевые слова из заголовка тендера
+                                custom_kw = extract_keywords_from_title(tender_title)
+                                if custom_kw:
+                                    logger.debug(
+                                        f"Ключевые слова для поиска: {custom_kw[:3]}..."
+                                    )
 
-                            for t_data in historical:
-                                try:
-                                    result = await analyze_tender_protocol(
-                                        page=page,
+                                # Поиск завершённых тендеров по кастомным ключевым словам
+                                historical = await search_historical_tenders(
+                                    page,
+                                    inn,
+                                    limit=HISTORICAL_TENDERS_LIMIT,
+                                    custom_keywords=custom_kw,
+                                )
+
+                                if not historical:
+                                    logger.info(
+                                        f"Исторические тендеры не найдены для {tender_id}"
+                                    )
+                                    continue
+
+                                logger.info(
+                                    f"Найдено {len(historical)} завершённых тендеров для {tender_id}"
+                                )
+
+                                # Сохраняем завершённые тендеры
+                                historical_ids = []
+                                for t_data in historical:
+                                    await upsert_tender(
+                                        conn,
                                         tender_id=t_data["tender_id"],
-                                        tender_url=t_data["url"],
                                         customer_inn=inn,
-                                        conn=conn,
+                                        url=t_data["url"],
+                                        title=t_data["title"],
+                                        price=t_data["price"],
+                                        tender_status="completed",
                                     )
-                                    if result.parse_status == "success":
-                                        success_count += 1
-                                    else:
+                                    historical_ids.append(t_data["tender_id"])
+                                await conn.commit()
+
+                                # Парсинг протоколов
+                                success_count = 0
+                                failed_count = 0
+
+                                for t_data in historical:
+                                    try:
+                                        result = await analyze_tender_protocol(
+                                            page=page,
+                                            tender_id=t_data["tender_id"],
+                                            tender_url=t_data["url"],
+                                            customer_inn=inn,
+                                            conn=conn,
+                                        )
+                                        if result.parse_status == "success":
+                                            success_count += 1
+                                        else:
+                                            failed_count += 1
+                                    except Exception as proto_exc:
+                                        logger.error(
+                                            f"Ошибка парсинга протокола тендера "
+                                            f"{t_data['tender_id']}: {proto_exc}"
+                                        )
                                         failed_count += 1
-                                except Exception as proto_exc:
-                                    logger.error(
-                                        f"Ошибка парсинга протокола тендера "
-                                        f"{t_data['tender_id']}: {proto_exc}"
-                                    )
-                                    failed_count += 1
 
-                            logger.info(
-                                f"ИНН {inn}: протоколы проанализированы — "
-                                f"success={success_count}, failed/skipped={failed_count}"
-                            )
-
-                            analyses = await get_protocol_analyses_for_customer(
-                                conn, inn
-                            )
-                            metrics = calculate_metrics(analyses)
-                            log_metrics(inn, metrics)
-
-                            if metrics.is_determinable:
-                                active_tenders_for_inn = await get_tenders_by_customer(
-                                    conn, inn, tender_status="active"
+                                # Получаем анализы ТОЛЬКО для этих исторических тендеров
+                                analyses = await get_latest_protocol_analyses(
+                                    conn, inn, historical_ids
                                 )
-                                for active_tender in active_tenders_for_inn:
+                                metrics = calculate_metrics(analyses)
+                                log_metrics(inn, metrics)
+
+                                # Проверяем, нет ли уже результата для этого тендера
+                                if await result_exists(conn, tender_id):
+                                    logger.debug(
+                                        f"Результат для тендера {tender_id} уже существует"
+                                    )
+                                    continue
+
+                                # Сохраняем результат для этого конкретного тендера
+                                if metrics.is_determinable:
                                     await insert_result(
                                         conn,
-                                        active_tender_id=active_tender["tender_id"],
+                                        active_tender_id=tender_id,
                                         customer_inn=inn,
                                         total_historical=metrics.total_historical,
                                         total_analyzed=metrics.total_analyzed,
@@ -240,19 +277,15 @@ async def run() -> None:
                                         is_interesting=metrics.is_interesting,
                                         source="primary",
                                     )
-                                await conn.commit()
-                                logger.success(
-                                    f"Результаты сохранены для INN {inn}: "
-                                    f"is_interesting={metrics.is_interesting}"
-                                )
+                                    await conn.commit()
+                                    logger.success(
+                                        f"Результат для тендера {tender_id}: "
+                                        f"is_interesting={metrics.is_interesting}"
+                                    )
 
                             await update_customer_status(conn, inn, "analyzed")
                             await conn.commit()
-                            logger.success(
-                                f"Заказчик {inn}: сохранено "
-                                f"{len(historical)} завершённых тендеров, "
-                                f"протоколов проанализировано: {success_count}"
-                            )
+                            logger.success(f"Заказчик {inn}: анализ завершён")
 
                         except Exception as exc:
                             logger.error(f"Ошибка при обработке ИНН {inn}: {exc}")
@@ -340,10 +373,21 @@ async def run() -> None:
                             # 3.3 Анализ истории для нового тендера (как в Этапе 2)
                             new_historical_ids: list[str] = []
 
+                            # Извлекаем ключевые слова из заголовка тендера
+                            tender_title = t_data["title"] or ""
+                            custom_kw = extract_keywords_from_title(tender_title)
+                            if custom_kw:
+                                logger.debug(
+                                    f"Ключевые слова для тендера {t_data['tender_id']}: {custom_kw[:3]}..."
+                                )
+
                             try:
-                                # Поиск завершённых тендеров
+                                # Поиск завершённых тендеров с кастомными ключевыми словами
                                 historical = await search_historical_tenders(
-                                    page, inn, limit=HISTORICAL_TENDERS_LIMIT
+                                    page,
+                                    inn,
+                                    limit=HISTORICAL_TENDERS_LIMIT,
+                                    custom_keywords=custom_kw,
                                 )
 
                                 if not historical:

@@ -30,6 +30,7 @@ from src.parser.participant_patterns import (
 )
 from src.parser.pdf_parser import extract_participants_from_pdf, is_scan_pdf
 from src.scraper.browser import polite_wait, safe_goto
+from src.scraper.eis_fallback import fallback_get_protocol
 
 
 @dataclass
@@ -298,6 +299,98 @@ def _parse_downloaded_file(file_path: Path) -> tuple[ParticipantResult, str]:
         )
 
 
+async def _try_get_eis_link(page: Page) -> str | None:
+    """Пытается найти ссылку на ЕИС со страницы тендера rostender.info."""
+    try:
+        eis_link_el = await page.query_selector("a[href*='zakupki.gov.ru']")
+        if eis_link_el:
+            eis_url = await eis_link_el.get_attribute("href")
+            if eis_url:
+                return eis_url
+    except Exception as e:
+        logger.debug("Ошибка при поиске ссылки на ЕИС: {}", e)
+    return None
+
+
+async def _try_eis_protocol(
+    page: Page,
+    eis_url: str,
+    tender_id: str,
+    customer_inn: str,
+    conn: aiosqlite.Connection,
+) -> ProtocolParseResult:
+    """Пробует получить протокол с ЕИС (zakupki.gov.ru)."""
+    try:
+        protocol_path = await fallback_get_protocol(
+            page=page,
+            tender_eis_url=eis_url,
+            tender_id=tender_id,
+            customer_inn=customer_inn,
+        )
+
+        if protocol_path is None:
+            result = ProtocolParseResult(
+                tender_id=tender_id,
+                participants_count=None,
+                parse_source="eis_not_found",
+                parse_status="no_protocol",
+                doc_path=None,
+                notes="Протокол не найден на ЕИС",
+            )
+            await _save_result(conn, result)
+            return result
+
+        # Парсим скачанный протокол
+        participant_result, parse_source = _parse_downloaded_file(protocol_path)
+
+        if participant_result.count is not None:
+            doc_path = (
+                str(protocol_path.relative_to(DOWNLOADS_DIR))
+                if KEEP_DOWNLOADED_DOCS
+                else None
+            )
+            result = ProtocolParseResult(
+                tender_id=tender_id,
+                participants_count=participant_result.count,
+                parse_source=f"eis_{parse_source}",
+                parse_status="success",
+                doc_path=doc_path,
+                notes=f"EIS: method={participant_result.method}, confidence={participant_result.confidence}",
+            )
+            await _save_result(conn, result)
+            logger.success(
+                "Тендер {} (ЕИС): {} участников (источник: eis_{})",
+                tender_id,
+                participant_result.count,
+                parse_source,
+            )
+            return result
+        else:
+            result = ProtocolParseResult(
+                tender_id=tender_id,
+                participants_count=None,
+                parse_source="eis_failed",
+                parse_status="failed",
+                doc_path=None,
+                notes=f"Не удалось извлечь участников из протокола ЕИС: {participant_result.method}",
+            )
+            await _save_result(conn, result)
+            return result
+
+    except Exception as e:
+        logger.error("Ошибка при получении протокола с ЕИС: {}", e)
+        result = ProtocolParseResult(
+            tender_id=tender_id,
+            participants_count=None,
+            parse_source="eis_error",
+            parse_status="failed",
+            doc_path=None,
+            notes=f"Ошибка ЕИС: {str(e)[:100]}",
+        )
+        await _save_result(conn, result)
+        return result
+
+
 async def analyze_tender_protocol(
     page: Page,
     tender_id: str,
@@ -335,6 +428,12 @@ async def analyze_tender_protocol(
     tender_data = _extract_tenders_data(page_html, tender_id)
 
     if tender_data is None:
+        # Пробуем EIS фоллбэк
+        eis_url = await _try_get_eis_link(page)
+        if eis_url:
+            logger.info("tendersData не найден, пробуем ЕИС: {}", eis_url)
+            return await _try_eis_protocol(page, eis_url, tender_id, customer_inn, conn)
+
         result = ProtocolParseResult(
             tender_id=tender_id,
             participants_count=None,
@@ -350,6 +449,14 @@ async def analyze_tender_protocol(
     protocols = _find_protocol_files(tender_data)
 
     if not protocols:
+        # Пробуем EIS фоллбэк
+        eis_url = await _try_get_eis_link(page)
+        if eis_url:
+            logger.info(
+                "Протоколы не найдены на rostender.info, пробуем ЕИС: {}", eis_url
+            )
+            return await _try_eis_protocol(page, eis_url, tender_id, customer_inn, conn)
+
         result = ProtocolParseResult(
             tender_id=tender_id,
             participants_count=None,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from loguru import logger
@@ -20,17 +21,86 @@ from src.scraper.browser import BASE_URL, polite_wait, safe_goto
 S = SELECTORS
 
 
+def extract_keywords_from_title(title: str) -> list[str]:
+    """Извлекает ключевые слова из заголовка тендера для поиска похожих тендеров.
+
+    По ТЗ: генерирует различные интерпретации ключевых слов из заголовка.
+    Например: "Поставка электротехнического оборудования и материалов"
+    -> ["Поставка электротехнического оборудования и материалов", "Оборудование",
+        "Поставка электротехнического оборудования", "электротехническое оборудование",
+        "Поставка", "Оборудование и материалы"]
+
+    Args:
+        title: Заголовок тендера.
+
+    Returns:
+        Список ключевых слов для поиска.
+    """
+    keywords = []
+
+    title_lower = title.lower()
+
+    keywords.append(title)
+
+    words = re.findall(r"\b\w{4,}\b", title_lower)
+
+    important_words = []
+    for word in words:
+        if word not in {
+            "для",
+            "что",
+            "это",
+            "котор",
+            "таким",
+            "товар",
+            "работ",
+            "услуг",
+        }:
+            important_words.append(word)
+
+    if len(title) > 10:
+        first_part = title.split(",")[0].split("(")[0].strip()
+        if len(first_part) > 5:
+            keywords.append(first_part)
+
+    for i, word in enumerate(important_words[:5]):
+        if len(word) > 5:
+            keywords.append(word.capitalize())
+
+    for general_kw in SEARCH_KEYWORDS:
+        if general_kw.lower() in title_lower:
+            if general_kw not in keywords:
+                keywords.append(general_kw)
+            for gen_kw in SEARCH_KEYWORDS:
+                if gen_kw not in keywords and (
+                    gen_kw.lower() in title_lower
+                    or any(word in gen_kw.lower() for word in important_words[:3])
+                ):
+                    keywords.append(gen_kw)
+
+    seen = set()
+    unique_keywords = []
+    for kw in keywords:
+        kw_normalized = kw.lower().strip()
+        if kw_normalized not in seen and len(kw_normalized) > 2:
+            seen.add(kw_normalized)
+            unique_keywords.append(kw)
+
+    return unique_keywords[:10]
+
+
 async def search_historical_tenders(
     page: Page,
     customer_inn: str,
     *,
     limit: int = HISTORICAL_TENDERS_LIMIT,
+    custom_keywords: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Ищет завершённые тендеры заказчика на rostender.info.
 
     Фильтры (по плану, Этап 2.1):
       - Заказчик: ИНН
-      - Ключевые слова: общие ``SEARCH_KEYWORDS``
+      - Ключевые слова: общие ``SEARCH_KEYWORDS`` ИЛИ ``custom_keywords``
       - Этап: «Завершён» (value="100")
       - Цена от: ``MIN_PRICE_HISTORICAL`` (1 000 000 ₽)
       - Скрывать тендеры без цены
@@ -46,16 +116,22 @@ async def search_historical_tenders(
         customer_inn: ИНН заказчика.
         limit: Максимальное число тендеров для возврата
                (по умолчанию ``HISTORICAL_TENDERS_LIMIT``).
+        custom_keywords: Кастомный список ключевых слов для поиска.
+                         Если None — используются ``SEARCH_KEYWORDS``.
 
     Returns:
         Список словарей ``{tender_id, title, url, price, status}``,
         ограниченный *limit* записями.  ``status`` = ``"completed"``.
     """
     logger.info(
-        "Поиск завершённых тендеров для ИНН {} (лимит: {})",
+        "Поиск завершённых тендеров для ИНН {} (лимит: {}, ключевые слова: {})",
         customer_inn,
         limit,
+        "custom" if custom_keywords else "general",
     )
+
+    # Используем кастомные ключевые слова или общие
+    keywords = custom_keywords if custom_keywords else SEARCH_KEYWORDS
 
     # ── 1. Переход на страницу расширенного поиска ────────────────────────
     await safe_goto(page, f"{BASE_URL}/extsearch/advanced")
@@ -65,8 +141,8 @@ async def search_historical_tenders(
     # Заказчик (ИНН)
     await page.fill(S["search_customers_input"], customer_inn)
 
-    # Ключевые слова (общие, не из конкретного тендера)
-    keywords_str = ", ".join(SEARCH_KEYWORDS)
+    # Ключевые слова (общие или кастомные из заголовка тендера)
+    keywords_str = ", ".join(keywords)
     await page.fill(S["search_keywords_input"], keywords_str)
 
     # Цена от: MIN_PRICE_HISTORICAL через JS (maskMoney)
