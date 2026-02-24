@@ -230,8 +230,6 @@ async def extract_inn_from_page(page: Page, tender_url: str) -> str | None:
         return inn_match.group(1)
 
     # Попробуем найти ссылку на ЕИС (zakupki.gov.ru)
-    # TODO: Шаг 5 (eis_fallback.py) — реализовать переход по ссылке ЕИС
-    # для извлечения ИНН и протоколов с zakupki.gov.ru.
     eis_link_el = await page.query_selector(S["eis_link"])
     if eis_link_el:
         eis_url = await eis_link_el.get_attribute("href")

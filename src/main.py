@@ -34,6 +34,10 @@ from src.db.repository import (
     tender_exists,
     result_exists,
     get_latest_protocol_analyses,
+    get_interesting_results,
+    get_all_customers,
+    get_all_results,
+    get_all_protocol_analyses,
 )
 from src.scraper.active_tenders import (
     extract_inn_from_page,
@@ -46,6 +50,8 @@ from src.scraper.browser import create_browser, create_page
 from src.scraper.eis_fallback import fallback_extract_inn
 from src.parser.html_protocol import analyze_tender_protocol
 from src.analyzer.competition import calculate_metrics, log_metrics
+from src.reporter.console_report import print_console_report, log_console_summary
+from src.reporter.excel_report import generate_excel_report
 
 
 def _configure_logging() -> None:
@@ -429,8 +435,23 @@ async def run() -> None:
     logger.info("Этап 3: Расширенный поиск завершён")
 
     # Шаг 4: Формирование отчёта
-    # TODO: Этап 8 — reporter/*
-    logger.info("Этап 4: Отчёт — ещё не реализован")
+    logger.info("Этап 4: Формирование отчёта...")
+
+    async with get_connection() as conn:
+        interesting_results = await get_interesting_results(conn)
+        all_results = await get_all_results(conn)
+        all_customers = await get_all_customers(conn)
+        all_protocols = await get_all_protocol_analyses(conn)
+
+    if "console" in OUTPUT_FORMATS:
+        print_console_report(interesting_results, all_results, all_customers)
+        log_console_summary(len(all_customers), len(interesting_results))
+
+    if "excel" in OUTPUT_FORMATS:
+        excel_path = generate_excel_report(
+            interesting_results, all_results, all_customers, all_protocols
+        )
+        logger.success("Отчёт сохранён: {}", excel_path)
 
     logger.info("=== Rostender Parser завершён ===")
 

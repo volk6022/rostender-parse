@@ -324,3 +324,63 @@ async def get_latest_protocol_analyses(
         (customer_inn, *tender_ids),
     )
     return await cursor.fetchall()
+
+
+# ── Reports ──────────────────────────────────────────────────────────────────────
+
+
+async def get_all_customers(conn: aiosqlite.Connection) -> list[aiosqlite.Row]:
+    """Получить всех заказчиков с информацией о тендерах."""
+    cursor = await conn.execute(
+        """
+        SELECT
+            c.inn,
+            c.name,
+            c.status,
+            c.last_analysis_date,
+            COUNT(t.tender_id) AS total_tenders,
+            SUM(CASE WHEN t.tender_status = 'active' THEN 1 ELSE 0 END) AS active_tenders,
+            SUM(CASE WHEN t.tender_status = 'completed' THEN 1 ELSE 0 END) AS completed_tenders
+        FROM customers c
+        LEFT JOIN tenders t ON c.inn = t.customer_inn
+        GROUP BY c.inn
+        ORDER BY c.inn
+        """
+    )
+    return await cursor.fetchall()
+
+
+async def get_all_results(conn: aiosqlite.Connection) -> list[aiosqlite.Row]:
+    """Получить все результаты с данными тендеров и заказчиков."""
+    cursor = await conn.execute(
+        """
+        SELECT
+            r.*,
+            t.title   AS tender_title,
+            t.url     AS tender_url,
+            t.price   AS tender_price,
+            c.name    AS customer_name
+        FROM results r
+        JOIN tenders   t ON r.active_tender_id = t.tender_id
+        JOIN customers c ON r.customer_inn     = c.inn
+        ORDER BY r.is_interesting DESC, r.competition_ratio DESC
+        """
+    )
+    return await cursor.fetchall()
+
+
+async def get_all_protocol_analyses(conn: aiosqlite.Connection) -> list[aiosqlite.Row]:
+    """Получить все результаты анализа протоколов с данными тендеров."""
+    cursor = await conn.execute(
+        """
+        SELECT
+            pa.*,
+            t.title        AS tender_title,
+            t.customer_inn AS customer_inn,
+            t.tender_status AS tender_status
+        FROM protocol_analysis pa
+        JOIN tenders t ON pa.tender_id = t.tender_id
+        ORDER BY pa.analyzed_at DESC
+        """
+    )
+    return await cursor.fetchall()
