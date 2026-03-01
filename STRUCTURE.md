@@ -314,7 +314,8 @@ erDiagram
 
     PROTOCOL_ANALYSIS {
         int id PK
-        string tender_id FK UK
+        string tender_id FK
+        string tender_id UK
         int participants_count
         string parse_source
         string parse_status
@@ -416,9 +417,9 @@ flowchart LR
     Stage2 --> Stage3
     Stage3 --> Stage4
 
-    Stage1 :--> DB[(SQLite)]
-    Stage2 :--> DB
-    Stage3 :--> DB
+    Stage1 --> DB[(SQLite)]
+    Stage2 --> DB
+    Stage3 --> DB
 ```
 
 ## Usage
