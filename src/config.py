@@ -60,6 +60,19 @@ if not ROSTENDER_LOGIN or not ROSTENDER_PASSWORD:
     )
     sys.exit(1)
 
+# ── Прокси (опционально) ──────────────────────────────────────────────────────
+_proxy_server: str = _cfg.get("proxy_server", "")
+_proxy_username: str = _cfg.get("proxy_username", "")
+_proxy_password: str = _cfg.get("proxy_password", "")
+
+PROXY_CONFIG: dict | None = None
+if _proxy_server:
+    PROXY_CONFIG = {"server": _proxy_server}
+    if _proxy_username:
+        PROXY_CONFIG["username"] = _proxy_username
+    if _proxy_password:
+        PROXY_CONFIG["password"] = _proxy_password
+
 # ── Поиск активных тендеров ──────────────────────────────────────────────────
 SEARCH_KEYWORDS: list[str] = _cfg.get(
     "search_keywords",

@@ -2,6 +2,13 @@
 rostender_login: ""
 rostender_password: ""
 
+# ── Прокси (опционально) ────────────────────────────────────────────
+# Формат: "http://ip:port", "https://ip:port", "socks5://ip:port"
+# Оставьте пустым для работы без прокси.
+proxy_server: ""
+proxy_username: ""
+proxy_password: ""
+
 # ── Поиск активных тендеров ────────────────────────────────────────
 search_keywords:
   - "Поставка"

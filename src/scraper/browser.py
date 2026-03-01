@@ -15,6 +15,8 @@ from playwright.async_api import (
 )
 from loguru import logger
 
+from src.config import PROXY_CONFIG
+
 
 BASE_URL = "https://rostender.info"
 
@@ -40,8 +42,15 @@ async def create_browser(
     """
     pw: Playwright = await async_playwright().start()
     try:
-        browser = await pw.chromium.launch(headless=headless)
-        logger.debug("Chromium запущен (headless={})", headless)
+        launch_kwargs: dict = {"headless": headless}
+        if PROXY_CONFIG:
+            launch_kwargs["proxy"] = PROXY_CONFIG
+        browser = await pw.chromium.launch(**launch_kwargs)
+        logger.debug(
+            "Chromium запущен (headless={}, proxy={})",
+            headless,
+            PROXY_CONFIG["server"] if PROXY_CONFIG else "нет",
+        )
         try:
             yield browser
         finally:
