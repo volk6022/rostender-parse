@@ -2,7 +2,7 @@
 
 ## Overview
 
-Rostender Parser — это CLI-инструмент для автоматического поиска и анализа государственных тендеров на портале rostender.info. Система находит активные тендеры, анализирует историю заказчиков и выявляет тендеры с низкой конкуренцией.
+Rostender Parser — это CLI-инструмент для автоматического поиска и анализа государственных тендеров на портале rostender.info. Система авторизуется на сайте, находит активные тендеры, анализирует историю заказчиков и выявляет тендеры с низкой конкуренцией.
 
 ## Architecture
 
@@ -13,13 +13,21 @@ flowchart TB
         run["run() async"]
     end
 
-    subgraph Config["config.py — Configuration"]
+    subgraph ConfigYAML["config.yaml — User Configuration"]
+        creds["Credentials (login, password)"]
+        search_params["Search Parameters (keywords, prices, dates)"]
+        analysis_params["Analysis Parameters (thresholds, limits)"]
+        output_params["Output Settings (formats)"]
+    end
+
+    subgraph Config["config.py — Configuration Loader"]
         dirs["Paths (DATA_DIR, DOWNLOADS_DIR, REPORTS_DIR)"]
-        params["Search Parameters (KEYWORDS, MIN_PRICE, etc.)"]
+        params["Loaded Parameters from YAML"]
         selectors["CSS Selectors for rostender.info"]
     end
 
     subgraph Scraper["scraper/ — Web Scraping"]
+        auth["auth.py<br/>Login to rostender.info"]
         browser["browser.py<br/>Browser & Page management"]
         active["active_tenders.py<br/>Search active tenders"]
         historical["historical_search.py<br/>Search completed tenders"]
@@ -47,6 +55,7 @@ flowchart TB
         excel["excel_report.py<br/>Excel .xlsx export"]
     end
 
+    ConfigYAML --> Config
     CLI --> Config
     CLI --> Scraper
     CLI --> Parser
@@ -54,6 +63,7 @@ flowchart TB
     CLI --> DB
     CLI --> Reporter
 
+    auth --> browser
     Scraper --> Parser
     Parser --> DB
     Analyzer --> DB
@@ -71,8 +81,14 @@ sequenceDiagram
     participant DB
     participant Reporter
 
-    User->>Browser: 1. Search active tenders
-    Browser->>rostender: Fill search filters
+    User->>Browser: Launch pipeline
+
+    Note over Browser,rostender: Single browser session for entire pipeline
+
+    Browser->>rostender: 0. Login (username + password)
+    rostender-->>Browser: Session cookies
+
+    Browser->>rostender: 1. Search active tenders
     rostender-->>Browser: Tender list
     Browser->>DB: Save tenders + customers
 
@@ -95,26 +111,75 @@ sequenceDiagram
         end
         
         Browser->>Browser: 4. Calculate competition metrics
-        DB->>Reporter: 5. Generate report
     end
 
+    Note over Browser,rostender: Extended search for interesting customers
+
+    loop For each interesting customer
+        Browser->>rostender: 5. Search all active tenders (lower price)
+        rostender-->>Browser: Extended tender list
+        Browser->>DB: Save + analyze new tenders
+    end
+
+    DB->>Reporter: 6. Generate report
     Reporter-->>User: Console + Excel output
 ```
 
+## Configuration
+
+### config.yaml (User Configuration)
+
+All user-configurable parameters are stored in `config.yaml` in the project root. The file is **not committed to git** (contains credentials). A template `config.yaml.example` is provided.
+
+```yaml
+# Authentication (required)
+rostender_login: "your_login"
+rostender_password: "your_password"
+
+# Search parameters, price thresholds, analysis settings, output formats...
+```
+
+### config.py (Configuration Loader)
+
+Loads `config.yaml` and exports typed constants for use by other modules.
+
+| Component | Source | Description |
+|-----------|--------|-------------|
+| **Credentials** | YAML | `ROSTENDER_LOGIN`, `ROSTENDER_PASSWORD` (required, validated at startup) |
+| **Paths** | Computed | `PROJECT_ROOT`, `DATA_DIR`, `DOWNLOADS_DIR`, `REPORTS_DIR`, `DB_PATH` |
+| **Search Keywords** | YAML | `SEARCH_KEYWORDS`, `EXCLUDE_KEYWORDS` |
+| **Price Limits** | YAML | `MIN_PRICE_ACTIVE` (25M), `MIN_PRICE_RELATED` (2M), `MIN_PRICE_HISTORICAL` (1M) |
+| **Analysis Thresholds** | YAML | `MAX_PARTICIPANTS_THRESHOLD` (2), `COMPETITION_RATIO_THRESHOLD` (0.8) |
+| **Selectors** | Python | CSS selectors for rostender.info page elements (including login form) |
+
+**Startup validation:**
+- If `config.yaml` is missing → error with instructions to copy from `config.yaml.example`
+- If `rostender_login` or `rostender_password` is empty → error at startup
+
 ## Module Details
 
-### `config.py` — Configuration
-
-| Component | Description |
-|-----------|-------------|
-| **Paths** | `DATA_DIR`, `DOWNLOADS_DIR`, `REPORTS_DIR`, `DB_PATH` |
-| **Search Keywords** | `SEARCH_KEYWORDS` — words for tender search |
-| **Exclude Keywords** | `EXCLUDE_KEYWORDS` — words to exclude |
-| **Price Limits** | `MIN_PRICE_ACTIVE` (25M), `MIN_PRICE_RELATED` (2M), `MIN_PRICE_HISTORICAL` (1M) |
-| **Analysis Thresholds** | `MAX_PARTICIPANTS_THRESHOLD` (2), `COMPETITION_RATIO_THRESHOLD` (0.8) |
-| **Selectors** | CSS selectors for rostender.info page elements |
-
 ### `scraper/` — Web Scraping
+
+#### `auth.py`
+
+```mermaid
+classDiagram
+    class Auth {
+        +login(page) async
+    }
+    Auth --> Page
+```
+
+**Functions:**
+- `login(page)` — Authenticate on rostender.info. Navigates to `/login`, fills username/password from config, submits the form, verifies success by checking that `.header--notLogged` disappears. Raises `RuntimeError` on failure.
+
+**Login form selectors:**
+| Selector | Target |
+|----------|--------|
+| `#username` | Login/email field |
+| `#password` | Password field |
+| `button[name='login-button']` | Submit button |
+| `.header--notLogged` | Marker for unauthenticated state |
 
 #### `browser.py`
 
@@ -134,6 +199,8 @@ classDiagram
 - `create_page(browser)` — Create page with configured context (UA, viewport, locale)
 - `safe_goto(page, url)` — Navigate with DOM wait
 - `polite_wait()` — 2-second delay between requests
+
+**Session architecture:** The pipeline uses a single `Browser` → single `BrowserContext` → single `Page` for the entire run. Login is performed once; cookies persist across all navigation within the session.
 
 #### `active_tenders.py`
 
@@ -342,9 +409,9 @@ erDiagram
 **Customer Statuses:**
 - `new` — Newly discovered
 - `processing` — Being analyzed (historical search)
+- `analyzed` — Analysis completed
 - `extended_processing` — Extended search in progress
 - `extended_analyzed` — Extended analysis completed
-- `analyzed` — Analysis completed
 - `error` — Error during analysis
 
 #### `repository.py`
@@ -388,8 +455,12 @@ classDiagram
 ```mermaid
 flowchart LR
     subgraph Input
-        keywords["Search Keywords"]
-        filters["Price/Date Filters"]
+        config["config.yaml<br/>(credentials + params)"]
+        cli_args["CLI Arguments<br/>(optional overrides)"]
+    end
+
+    subgraph Stage0["Stage 0: Auth"]
+        login["Login to rostender.info"]
     end
 
     subgraph Stage1["Stage 1: Active Tenders"]
@@ -407,36 +478,119 @@ flowchart LR
         analyze["Calculate metrics"]
     end
 
+    subgraph Stage3ext["Stage 3+: Extended Search"]
+        extended["Find more tenders<br/>for interesting customers"]
+    end
+
     subgraph Stage4["Stage 4: Reports"]
         console["Console output"]
         excel["Excel report"]
     end
 
-    Input --> Stage1
+    Input --> Stage0
+    Stage0 --> Stage1
     Stage1 --> Stage2
     Stage2 --> Stage3
-    Stage3 --> Stage4
+    Stage3 --> Stage3ext
+    Stage3ext --> Stage4
 
     Stage1 --> DB[(SQLite)]
     Stage2 --> DB
     Stage3 --> DB
+    Stage3ext --> DB
 ```
 
-## Usage
+## File Structure
 
-```bash
-# Run full pipeline
-python -m src.main
-
-# Or use the module entry point
-python -m src
+```
+rostender-parse/
+├── .gitignore
+├── pyproject.toml            # Dependencies & entry point
+├── pytest.ini                # Test configuration
+├── uv.lock                   # UV lockfile
+├── README.md                 # User documentation
+├── STRUCTURE.md              # Architecture documentation (this file)
+├── login_config_plan.md      # Implementation plan for auth & config
+│
+├── config.yaml.example       # Configuration template (committed to git)
+├── config.yaml               # Active configuration (NOT in git, contains credentials)
+│
+├── data/                     # Runtime data
+│   ├── rostender.db          # SQLite database
+│   └── rostender.log         # Application log
+│
+├── downloads/                # Downloaded protocol files
+│
+├── reports/                  # Generated Excel reports
+│
+├── src/
+│   ├── __init__.py
+│   ├── config.py             # Configuration loader (reads config.yaml)
+│   ├── main.py               # CLI entry point, pipeline orchestration
+│   │
+│   ├── scraper/
+│   │   ├── __init__.py
+│   │   ├── auth.py           # Authentication on rostender.info
+│   │   ├── browser.py        # Playwright browser lifecycle
+│   │   ├── active_tenders.py # Search & parse active tenders
+│   │   ├── historical_search.py  # Search completed tenders by INN
+│   │   └── eis_fallback.py   # Fallback to zakupki.gov.ru
+│   │
+│   ├── parser/
+│   │   ├── __init__.py
+│   │   ├── html_protocol.py  # Protocol analysis pipeline
+│   │   ├── pdf_parser.py     # PDF text extraction
+│   │   ├── docx_parser.py    # DOCX parsing
+│   │   └── participant_patterns.py  # Shared regex patterns
+│   │
+│   ├── analyzer/
+│   │   ├── __init__.py
+│   │   └── competition.py    # Competition metrics calculation
+│   │
+│   ├── db/
+│   │   ├── __init__.py
+│   │   ├── schema.py         # SQLite DDL
+│   │   └── repository.py     # Async CRUD operations
+│   │
+│   └── reporter/
+│       ├── __init__.py
+│       ├── console_report.py # Console output formatting
+│       └── excel_report.py   # Excel .xlsx generation
+│
+└── tests/
+    ├── __init__.py
+    ├── conftest.py            # Fixtures: MockRow, sample data, in-memory DB
+    ├── test_parser.py         # Tests for participant_patterns.py
+    ├── test_analyzer.py       # Tests for competition.py
+    └── test_repository.py     # Tests for repository.py
 ```
 
 ## Dependencies
 
-- **playwright** — Browser automation
+- **playwright** — Browser automation (headless Chromium)
 - **aiosqlite** — Async SQLite
 - **openpyxl** — Excel generation
 - **pdfplumber** — PDF text extraction
 - **python-docx** — DOCX parsing
-- **loguru** — Logging
+- **loguru** — Structured logging
+- **pyyaml** — YAML configuration loading
+
+## Usage
+
+```bash
+# First-time setup
+cp config.yaml.example config.yaml
+# Edit config.yaml: fill in rostender_login and rostender_password
+
+# Run full pipeline
+rostender
+
+# Or directly
+python -m src.main
+
+# Check parameters without launching browser
+rostender --dry-run
+
+# Override config values via CLI
+rostender --keywords Поставка Оборудование --min-price 10000000 --days-back 14
+```

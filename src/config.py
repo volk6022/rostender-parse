@@ -1,65 +1,123 @@
-"""Настраиваемые параметры проекта Rostender Parser."""
+"""Настраиваемые параметры проекта Rostender Parser.
 
+Все пользовательские параметры загружаются из config.yaml в корне проекта.
+Пути и CSS-селекторы вычисляются/хранятся в Python.
+"""
+
+import sys
 from pathlib import Path
 
-# ── Пути ────────────────────────────────────────────────────────────────────────
+import yaml
+
+
+# ── Пути (вычисляемые, не в YAML) ───────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 DOWNLOADS_DIR = PROJECT_ROOT / "downloads"
 REPORTS_DIR = PROJECT_ROOT / "reports"
 DB_PATH = DATA_DIR / "rostender.db"
 
-# ── Поиск активных тендеров ─────────────────────────────────────────────────────
-SEARCH_KEYWORDS: list[str] = [
-    "Поставка",
-    "Поставки",
-    "Закупка",
-    "Снабжение",
-    "Приобретение",
-    "Оборудование и материалы",
-    "Оборудование",
-    "Станок",
-    "Станки",
-    "Лист",
-    "Труба",
-]
+# ── Загрузка config.yaml ────────────────────────────────────────────────────
+_CONFIG_PATH = PROJECT_ROOT / "config.yaml"
+_EXAMPLE_PATH = PROJECT_ROOT / "config.yaml.example"
 
-EXCLUDE_KEYWORDS: list[str] = [
-    "Выполнение работ",
-    "Капитальный ремонт",
-    "Оказание услуг",
-    "Лекарственные препараты",
-    "Благоустройство",
-    "Предоставление субсидий",
-    "Аренда",
-    "Строительство",
-    "Отбор получателей субсидии",
-    "Возмещение",
-    "Оказание консультационных услуг",
-    "Лекарственного препарата",
-    "Выполнение строительно-монтажных работ",
-]
+
+def _load_config() -> dict:
+    """Загрузить конфигурацию из config.yaml."""
+    if not _CONFIG_PATH.exists():
+        print(
+            f"ОШИБКА: Файл конфигурации не найден: {_CONFIG_PATH}\n"
+            f"Скопируйте шаблон и заполните данные для входа:\n"
+            f"  cp config.yaml.example config.yaml",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    with open(_CONFIG_PATH, "r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+
+    if not isinstance(cfg, dict):
+        print(
+            "ОШИБКА: config.yaml имеет неверный формат (ожидается YAML-словарь)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    return cfg
+
+
+_cfg = _load_config()
+
+# ── Авторизация (обязательно) ────────────────────────────────────────────────
+ROSTENDER_LOGIN: str = _cfg.get("rostender_login", "")
+ROSTENDER_PASSWORD: str = _cfg.get("rostender_password", "")
+
+if not ROSTENDER_LOGIN or not ROSTENDER_PASSWORD:
+    print(
+        "ОШИБКА: rostender_login и rostender_password обязательны в config.yaml.\n"
+        "Укажите логин и пароль от rostender.info.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+# ── Поиск активных тендеров ──────────────────────────────────────────────────
+SEARCH_KEYWORDS: list[str] = _cfg.get(
+    "search_keywords",
+    [
+        "Поставка",
+        "Поставки",
+        "Закупка",
+        "Снабжение",
+        "Приобретение",
+        "Оборудование и материалы",
+        "Оборудование",
+        "Станок",
+        "Станки",
+        "Лист",
+        "Труба",
+    ],
+)
+
+EXCLUDE_KEYWORDS: list[str] = _cfg.get(
+    "exclude_keywords",
+    [
+        "Выполнение работ",
+        "Капитальный ремонт",
+        "Оказание услуг",
+        "Лекарственные препараты",
+        "Благоустройство",
+        "Предоставление субсидий",
+        "Аренда",
+        "Строительство",
+        "Отбор получателей субсидии",
+        "Возмещение",
+        "Оказание консультационных услуг",
+        "Лекарственного препарата",
+        "Выполнение строительно-монтажных работ",
+    ],
+)
 
 # Диапазон дат публикации для поиска (формат "DD.MM.YYYY").
-# None — «сегодня».  Можно задать явно: "01.02.2026"
-SEARCH_DATE_FROM: str | None = None
-SEARCH_DATE_TO: str | None = None
+# None — «сегодня».
+SEARCH_DATE_FROM: str | None = _cfg.get("search_date_from")
+SEARCH_DATE_TO: str | None = _cfg.get("search_date_to")
 
-MIN_PRICE_ACTIVE: int = 25_000_000  # Мин. цена активных тендеров (Этап 1)
-MIN_PRICE_RELATED: int = 2_000_000  # Мин. цена доп. тендеров заказчика (Этап 3)
-MIN_PRICE_HISTORICAL: int = 1_000_000  # Мин. цена при поиске исторических (Этап 2)
+# ── Пороги цен (руб.) ───────────────────────────────────────────────────────
+MIN_PRICE_ACTIVE: int = _cfg.get("min_price_active", 25_000_000)
+MIN_PRICE_RELATED: int = _cfg.get("min_price_related", 2_000_000)
+MIN_PRICE_HISTORICAL: int = _cfg.get("min_price_historical", 1_000_000)
 
-# ── Анализ конкуренции ──────────────────────────────────────────────────────────
-HISTORICAL_TENDERS_LIMIT: int = 5  # Кол-во последних завершённых для анализа
-MAX_PARTICIPANTS_THRESHOLD: int = 2  # Макс. участников для «низкой конкуренции»
-COMPETITION_RATIO_THRESHOLD: float = 0.8  # Доля тендеров с низкой конкуренцией
+# ── Анализ конкуренции ───────────────────────────────────────────────────────
+HISTORICAL_TENDERS_LIMIT: int = _cfg.get("historical_tenders_limit", 5)
+MAX_PARTICIPANTS_THRESHOLD: int = _cfg.get("max_participants_threshold", 2)
+COMPETITION_RATIO_THRESHOLD: float = _cfg.get("competition_ratio_threshold", 0.8)
 
-# ── Хранение ────────────────────────────────────────────────────────────────────
-KEEP_DOWNLOADED_DOCS: bool = True  # Сохранять документы после анализа
-CLEANUP_AFTER_DAYS: int = 30  # Через сколько дней чистить старые файлы
+# ── Хранение ────────────────────────────────────────────────────────────────
+KEEP_DOWNLOADED_DOCS: bool = _cfg.get("keep_downloaded_docs", True)
+CLEANUP_AFTER_DAYS: int = _cfg.get("cleanup_after_days", 30)
 
-# ── Выход ───────────────────────────────────────────────────────────────────────
-OUTPUT_FORMATS: list[str] = ["console", "excel"]
+# ── Выход ───────────────────────────────────────────────────────────────────
+OUTPUT_FORMATS: list[str] = _cfg.get("output_formats", ["console", "excel"])
 
 # ── CSS-селекторы rostender.info ─────────────────────────────────────────────
 # Вынесены в одно место: при изменении вёрстки сайта правки только здесь.
@@ -86,4 +144,9 @@ SELECTORS: dict[str, str] = {
     "eis_link": "a[href*='zakupki.gov.ru']",
     # Поле «Заказчик» (ИНН или наименование)
     "search_customers_input": "#customers",
+    # Авторизация
+    "login_username": "#username",
+    "login_password": "#password",
+    "login_button": "button[name='login-button']",
+    "logged_in_marker": ".header--notLogged",
 }

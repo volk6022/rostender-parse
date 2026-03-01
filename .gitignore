@@ -12,6 +12,7 @@ build/
 develop-eggs/
 dist/
 ### Project-specific
+config.yaml
 data/*.db
 data/*.db-*
 data/*.log

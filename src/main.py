@@ -53,6 +53,7 @@ from src.scraper.historical_search import (
     extract_keywords_from_title,
 )
 from src.scraper.browser import create_browser, create_page
+from src.scraper.auth import login
 from src.scraper.eis_fallback import fallback_extract_inn
 from src.parser.html_protocol import analyze_tender_protocol
 from src.analyzer.competition import calculate_metrics, log_metrics
@@ -246,10 +247,15 @@ async def run() -> None:
     # Шаг 0: Инициализация БД
     await init_db()
 
-    # Шаг 1: Поиск активных тендеров
-    logger.info("Этап 1: Поиск активных тендеров")
+    # ── Один браузер и одна страница на весь pipeline ────────────────────────
     async with create_browser() as browser:
         async with create_page(browser) as page:
+            # Авторизация (один раз, сессия сохраняется на весь pipeline)
+            await login(page)
+
+            # ── Этап 1: Поиск активных тендеров ──────────────────────────────
+            logger.info("Этап 1: Поиск активных тендеров")
+
             # 1.1 Поиск списка активных тендеров
             active_tenders = await search_active_tenders(
                 page,
@@ -293,15 +299,13 @@ async def run() -> None:
                     await conn.commit()
                     logger.success(f"Тендер {t_data['tender_id']} (ИНН {inn}) сохранен")
 
-    # Шаг 2: Анализ истории заказчиков
-    logger.info("Этап 2: Поиск завершённых тендеров по ИНН заказчиков")
-    async with get_connection() as conn:
-        new_customers = await get_customers_by_status(conn, "new")
-    logger.info(f"Заказчиков со статусом 'new': {len(new_customers)}")
+            # ── Этап 2: Анализ истории заказчиков ────────────────────────────
+            logger.info("Этап 2: Поиск завершённых тендеров по ИНН заказчиков")
+            async with get_connection() as conn:
+                new_customers = await get_customers_by_status(conn, "new")
+            logger.info(f"Заказчиков со статусом 'new': {len(new_customers)}")
 
-    if new_customers:
-        async with create_browser() as browser:
-            async with create_page(browser) as page:
+            if new_customers:
                 async with get_connection() as conn:
                     for customer in new_customers:
                         inn = customer["inn"]
@@ -341,20 +345,6 @@ async def run() -> None:
                                     )
 
                                 # Поиск завершённых тендеров по кастомным ключевым словам
-                                historical = await search_historical_tenders(
-                                    page,
-                                    inn,
-                                    limit=history_limit,
-                                    custom_keywords=custom_kw,
-                                    min_price=min_price_historical,
-                                )
-
-                                if not historical:
-                                    logger.info(
-                                        f"Исторические тендеры не найдены для {tender_id}"
-                                    )
-
-                                # Поиск завершённых тендеров по кастомным ключевым словам завершён по кастомным ключевым словам
                                 historical = await search_historical_tenders(
                                     page,
                                     inn,
@@ -454,21 +444,19 @@ async def run() -> None:
                             logger.error(f"Ошибка при обработке ИНН {inn}: {exc}")
                             await update_customer_status(conn, inn, "error")
                             await conn.commit()
-    else:
-        logger.info("Нет заказчиков для анализа (статус 'new')")
+            else:
+                logger.info("Нет заказчиков для анализа (статус 'new')")
 
-    # Шаг 3: Расширенный поиск по интересным заказчикам (Этап 7)
-    logger.info("Этап 3: Расширенный поиск по интересным заказчикам")
+            # ── Этап 3: Расширенный поиск по интересным заказчикам ────────────
+            logger.info("Этап 3: Расширенный поиск по интересным заказчикам")
 
-    async with get_connection() as conn:
-        interesting_customers = await get_interesting_customers(conn)
-    logger.info(
-        f"Интересных заказчиков для расширенного поиска: {len(interesting_customers)}"
-    )
+            async with get_connection() as conn:
+                interesting_customers = await get_interesting_customers(conn)
+            logger.info(
+                f"Интересных заказчиков для расширенного поиска: {len(interesting_customers)}"
+            )
 
-    if interesting_customers:
-        async with create_browser() as browser:
-            async with create_page(browser) as page:
+            if interesting_customers:
                 for customer in interesting_customers:
                     inn = customer["inn"]
                     name = customer["name"] or inn
@@ -641,9 +629,9 @@ async def run() -> None:
                         await update_customer_status(conn, inn, "extended_analyzed")
                         await conn.commit()
 
-    logger.info("Этап 3: Расширенный поиск завершён")
+            logger.info("Этап 3: Расширенный поиск завершён")
 
-    # Шаг 4: Формирование отчёта
+    # ── Этап 4: Формирование отчёта (без браузера) ───────────────────────────
     logger.info("Этап 4: Формирование отчёта...")
 
     async with get_connection() as conn:
