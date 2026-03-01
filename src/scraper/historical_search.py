@@ -8,12 +8,7 @@ from typing import Any
 from loguru import logger
 from playwright.async_api import Page
 
-from src.config import (
-    HISTORICAL_TENDERS_LIMIT,
-    MIN_PRICE_HISTORICAL,
-    SEARCH_KEYWORDS,
-    SELECTORS,
-)
+from src.config import SELECTORS
 from src.scraper.active_tenders import parse_tenders_on_page
 from src.scraper.browser import BASE_URL, polite_wait, safe_goto
 
@@ -36,6 +31,8 @@ def extract_keywords_from_title(title: str) -> list[str]:
     Returns:
         Список ключевых слов для поиска.
     """
+    from src.config import SEARCH_KEYWORDS
+
     keywords = []
 
     title_lower = title.lower()
@@ -93,8 +90,9 @@ async def search_historical_tenders(
     page: Page,
     customer_inn: str,
     *,
-    limit: int = HISTORICAL_TENDERS_LIMIT,
+    limit: int = 5,
     custom_keywords: list[str] | None = None,
+    min_price: int = 1_000_000,
 ) -> list[dict[str, Any]]:
     """Ищет завершённые тендеры заказчика на rostender.info.
 
@@ -102,7 +100,7 @@ async def search_historical_tenders(
       - Заказчик: ИНН
       - Ключевые слова: общие ``SEARCH_KEYWORDS`` ИЛИ ``custom_keywords``
       - Этап: «Завершён» (value="100")
-      - Цена от: ``MIN_PRICE_HISTORICAL`` (1 000 000 ₽)
+      - Цена от: ``min_price``
       - Скрывать тендеры без цены
 
     Исключения (``EXCLUDE_KEYWORDS``) **не** применяются: при поиске по
@@ -114,19 +112,28 @@ async def search_historical_tenders(
     Args:
         page: Playwright-страница.
         customer_inn: ИНН заказчика.
-        limit: Максимальное число тендеров для возврата
-               (по умолчанию ``HISTORICAL_TENDERS_LIMIT``).
+        limit: Максимальное число тендеров для возврата.
         custom_keywords: Кастомный список ключевых слов для поиска.
                          Если None — используются ``SEARCH_KEYWORDS``.
+        min_price: Минимальная цена для поиска.
 
     Returns:
         Список словарей ``{tender_id, title, url, price, status}``,
         ограниченный *limit* записями.  ``status`` = ``"completed"``.
     """
+    from src.config import (
+        HISTORICAL_TENDERS_LIMIT,
+        MIN_PRICE_HISTORICAL,
+        SEARCH_KEYWORDS,
+    )
+
+    effective_limit = limit if limit is not None else HISTORICAL_TENDERS_LIMIT
+    effective_min_price = min_price if min_price is not None else MIN_PRICE_HISTORICAL
+
     logger.info(
         "Поиск завершённых тендеров для ИНН {} (лимит: {}, ключевые слова: {})",
         customer_inn,
-        limit,
+        effective_limit,
         "custom" if custom_keywords else "general",
     )
 
@@ -158,11 +165,14 @@ async def search_historical_tenders(
             }
         }
     """,
-        [str(MIN_PRICE_HISTORICAL), S["search_min_price"], S["search_min_price_disp"]],
+        [str(effective_min_price), S["search_min_price"], S["search_min_price_disp"]],
     )
 
-    # Скрывать без цены
-    await page.check(S["search_hide_price"])
+    # Скрывать без цены (checkbox visually hidden, use JS)
+    await page.evaluate(
+        "sel => { const el = document.querySelector(sel); if (el && !el.checked) el.click(); }",
+        S["search_hide_price"],
+    )
 
     # Этап: Завершён (value="100")
     await page.evaluate(

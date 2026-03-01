@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import sys
+from datetime import datetime, timedelta
 
 from loguru import logger
 
@@ -11,13 +13,14 @@ from src.config import (
     DATA_DIR,
     DOWNLOADS_DIR,
     REPORTS_DIR,
-    SEARCH_KEYWORDS,
+    SEARCH_KEYWORDS as DEFAULT_KEYWORDS,
     EXCLUDE_KEYWORDS,
-    MIN_PRICE_ACTIVE,
-    MIN_PRICE_RELATED,
-    HISTORICAL_TENDERS_LIMIT,
-    MAX_PARTICIPANTS_THRESHOLD,
-    COMPETITION_RATIO_THRESHOLD,
+    MIN_PRICE_ACTIVE as DEFAULT_MIN_PRICE_ACTIVE,
+    MIN_PRICE_RELATED as DEFAULT_MIN_PRICE_RELATED,
+    MIN_PRICE_HISTORICAL as DEFAULT_MIN_PRICE_HISTORICAL,
+    HISTORICAL_TENDERS_LIMIT as DEFAULT_HISTORY_LIMIT,
+    MAX_PARTICIPANTS_THRESHOLD as DEFAULT_MAX_PARTICIPANTS,
+    COMPETITION_RATIO_THRESHOLD as DEFAULT_RATIO_THRESHOLD,
     OUTPUT_FORMATS,
 )
 from src.db.repository import (
@@ -84,22 +87,161 @@ def _ensure_dirs() -> None:
         d.mkdir(parents=True, exist_ok=True)
 
 
+def _parse_args() -> argparse.Namespace:
+    """Парсинг аргументов командной строки."""
+    parser = argparse.ArgumentParser(
+        description="Rostender Parser — поиск и анализ тендеров",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+
+    parser.add_argument(
+        "--keywords",
+        "-k",
+        nargs="+",
+        default=None,
+        help="Ключевые слова для поиска (через пробел)",
+    )
+
+    parser.add_argument(
+        "--min-price",
+        "-p",
+        type=int,
+        default=None,
+        help="Мин. цена активных тендеров в руб.",
+    )
+
+    parser.add_argument(
+        "--min-price-related",
+        type=int,
+        default=None,
+        help="Мин. цена для расширенного поиска заказчика в руб.",
+    )
+
+    parser.add_argument(
+        "--min-price-historical",
+        type=int,
+        default=None,
+        help="Мин. цена для исторического поиска в руб.",
+    )
+
+    parser.add_argument(
+        "--history-limit",
+        "-l",
+        type=int,
+        default=None,
+        help="Кол-во завершённых тендеров для анализа",
+    )
+
+    parser.add_argument(
+        "--max-participants",
+        "-m",
+        type=int,
+        default=None,
+        help="Макс. кол-во участников для низкой конкуренции",
+    )
+
+    parser.add_argument(
+        "--ratio-threshold",
+        "-r",
+        type=float,
+        default=None,
+        help="Доля тендеров с низкой конкуренцией (0.0-1.0)",
+    )
+
+    parser.add_argument(
+        "--date-from",
+        type=str,
+        default=None,
+        help="Дата поиска ОТ (DD.MM.YYYY). По умолчанию: последние 7 дней",
+    )
+
+    parser.add_argument(
+        "--date-to",
+        type=str,
+        default=None,
+        help="Дата поиска ДО (DD.MM.YYYY). По умолчанию: сегодня",
+    )
+
+    parser.add_argument(
+        "--days-back",
+        "-d",
+        type=int,
+        default=7,
+        help="Искать за последние N дней (если не указаны --date-from/--date-to)",
+    )
+
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Без браузера, только показать параметры",
+    )
+
+    return parser.parse_args()
+
+
+def _resolve_dates(args: argparse.Namespace) -> tuple[str | None, str | None]:
+    """Определить даты поиска на основе аргументов."""
+    if args.date_from or args.date_to:
+        return args.date_from, args.date_to
+
+    date_to = datetime.now().strftime("%d.%m.%Y")
+    date_from = (datetime.now() - timedelta(days=args.days_back)).strftime("%d.%m.%Y")
+    return date_from, date_to
+
+
 async def run() -> None:
     """Главный асинхронный pipeline."""
+    args = _parse_args()
+
+    keywords = args.keywords if args.keywords else DEFAULT_KEYWORDS
+    min_price_active = (
+        args.min_price if args.min_price is not None else DEFAULT_MIN_PRICE_ACTIVE
+    )
+    min_price_related = (
+        args.min_price_related
+        if args.min_price_related is not None
+        else DEFAULT_MIN_PRICE_RELATED
+    )
+    min_price_historical = (
+        args.min_price_historical
+        if args.min_price_historical is not None
+        else DEFAULT_MIN_PRICE_HISTORICAL
+    )
+    history_limit = (
+        args.history_limit if args.history_limit is not None else DEFAULT_HISTORY_LIMIT
+    )
+    max_participants = (
+        args.max_participants
+        if args.max_participants is not None
+        else DEFAULT_MAX_PARTICIPANTS
+    )
+    ratio_threshold = (
+        args.ratio_threshold
+        if args.ratio_threshold is not None
+        else DEFAULT_RATIO_THRESHOLD
+    )
+    date_from, date_to = _resolve_dates(args)
+
     _configure_logging()
     _ensure_dirs()
 
     logger.info("=== Rostender Parser запущен ===")
     logger.info(
         "Параметры: keywords={}, min_price={}, history_limit={}, "
-        "max_participants={}, ratio_threshold={}, formats={}",
-        len(SEARCH_KEYWORDS),
-        f"{MIN_PRICE_ACTIVE:_}",
-        HISTORICAL_TENDERS_LIMIT,
-        MAX_PARTICIPANTS_THRESHOLD,
-        COMPETITION_RATIO_THRESHOLD,
+        "max_participants={}, ratio_threshold={}, formats={}, date={}-{}",
+        len(keywords),
+        f"{min_price_active:_}",
+        history_limit,
+        max_participants,
+        ratio_threshold,
         OUTPUT_FORMATS,
+        date_from or "default",
+        date_to or "default",
     )
+
+    if args.dry_run:
+        logger.info("DRY RUN: параметры показаны, выход")
+        return
 
     # Шаг 0: Инициализация БД
     await init_db()
@@ -109,7 +251,13 @@ async def run() -> None:
     async with create_browser() as browser:
         async with create_page(browser) as page:
             # 1.1 Поиск списка активных тендеров
-            active_tenders = await search_active_tenders(page)
+            active_tenders = await search_active_tenders(
+                page,
+                keywords=keywords,
+                min_price=min_price_active,
+                date_from=date_from,
+                date_to=date_to,
+            )
             logger.info(f"Найдено активных тендеров: {len(active_tenders)}")
 
             async with get_connection() as conn:
@@ -196,8 +344,23 @@ async def run() -> None:
                                 historical = await search_historical_tenders(
                                     page,
                                     inn,
-                                    limit=HISTORICAL_TENDERS_LIMIT,
+                                    limit=history_limit,
                                     custom_keywords=custom_kw,
+                                    min_price=min_price_historical,
+                                )
+
+                                if not historical:
+                                    logger.info(
+                                        f"Исторические тендеры не найдены для {tender_id}"
+                                    )
+
+                                # Поиск завершённых тендеров по кастомным ключевым словам завершён по кастомным ключевым словам
+                                historical = await search_historical_tenders(
+                                    page,
+                                    inn,
+                                    limit=history_limit,
+                                    custom_keywords=custom_kw,
+                                    min_price=min_price_historical,
                                 )
 
                                 if not historical:
@@ -318,7 +481,8 @@ async def run() -> None:
                         extended_tenders = await search_tenders_by_inn(
                             page,
                             inn,
-                            min_price=MIN_PRICE_RELATED,
+                            keywords=keywords,
+                            min_price=min_price_related,
                         )
                     except Exception as search_err:
                         logger.error(
@@ -386,8 +550,9 @@ async def run() -> None:
                                 historical = await search_historical_tenders(
                                     page,
                                     inn,
-                                    limit=HISTORICAL_TENDERS_LIMIT,
+                                    limit=history_limit,
                                     custom_keywords=custom_kw,
+                                    min_price=min_price_historical,
                                 )
 
                                 if not historical:

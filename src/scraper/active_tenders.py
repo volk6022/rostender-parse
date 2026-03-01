@@ -11,9 +11,6 @@ from src.config import (
     EXCLUDE_KEYWORDS,
     MIN_PRICE_ACTIVE,
     MIN_PRICE_RELATED,
-    SEARCH_DATE_FROM,
-    SEARCH_DATE_TO,
-    SEARCH_KEYWORDS,
     SELECTORS,
 )
 from src.scraper.browser import BASE_URL, polite_wait, safe_goto
@@ -89,20 +86,38 @@ async def parse_tenders_on_page(
     return tenders
 
 
-async def search_active_tenders(page: Page) -> list[dict[str, Any]]:
+async def search_active_tenders(
+    page: Page,
+    *,
+    keywords: list[str] | None = None,
+    min_price: int = MIN_PRICE_ACTIVE,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> list[dict[str, Any]]:
     """
     Выполняет поиск активных тендеров по фильтрам из ТЗ.
     Обходит все страницы пагинации.
     Возвращает список словарей с данными тендеров.
+
+    Args:
+        page: Playwright страница.
+        keywords: Список ключевых слов для поиска.
+        min_price: Минимальная цена.
+        date_from: Дата начала поиска (DD.MM.YYYY).
+        date_to: Дата окончания поиска (DD.MM.YYYY).
     """
+    from src.config import SEARCH_KEYWORDS
+
     logger.info("Поиск активных тендеров на rostender.info...")
+
+    effective_keywords = keywords if keywords is not None else SEARCH_KEYWORDS
 
     # 1. Переходим на страницу расширенного поиска
     await safe_goto(page, f"{BASE_URL}/extsearch/advanced")
 
     # 2. Заполняем фильтры
     # Ключевые слова
-    keywords_str = ", ".join(SEARCH_KEYWORDS)
+    keywords_str = ", ".join(effective_keywords)
     await page.fill(S["search_keywords_input"], keywords_str)
 
     # Исключения
@@ -123,11 +138,14 @@ async def search_active_tenders(page: Page) -> list[dict[str, Any]]:
             }
         }
     """,
-        [str(MIN_PRICE_ACTIVE), S["search_min_price"], S["search_min_price_disp"]],
+        [str(min_price), S["search_min_price"], S["search_min_price_disp"]],
     )
 
-    # Скрывать без цены
-    await page.check(S["search_hide_price"])
+    # Скрывать без цены (checkbox visually hidden, use JS)
+    await page.evaluate(
+        "sel => { const el = document.querySelector(sel); if (el && !el.checked) el.click(); }",
+        S["search_hide_price"],
+    )
 
     # Этап: Прием заявок (значение "10").
     # Используем jQuery + Chosen plugin.
@@ -160,12 +178,12 @@ async def search_active_tenders(page: Page) -> list[dict[str, Any]]:
         [["1", "28"], S["search_placement_ways"]],
     )
 
-    # Дата публикации: из конфига или «сегодня»
-    date_from = SEARCH_DATE_FROM or datetime.now().strftime("%d.%m.%Y")
-    date_to = SEARCH_DATE_TO or datetime.now().strftime("%d.%m.%Y")
-    await page.fill(S["search_date_from"], date_from)
-    await page.fill(S["search_date_to"], date_to)
-    logger.debug("Фильтр дат: {} — {}", date_from, date_to)
+    # Дата публикации: из параметров или "сегодня"
+    effective_date_from = date_from or datetime.now().strftime("%d.%m.%Y")
+    effective_date_to = date_to or datetime.now().strftime("%d.%m.%Y")
+    await page.fill(S["search_date_from"], effective_date_from)
+    await page.fill(S["search_date_to"], effective_date_to)
+    logger.debug("Фильтр дат: {} — {}", effective_date_from, effective_date_to)
 
     # 3. Нажимаем "Искать"
     await page.click(S["search_button"])
@@ -270,6 +288,8 @@ async def get_customer_name(page: Page) -> str | None:
 async def search_tenders_by_inn(
     page: Page,
     inn: str,
+    *,
+    keywords: list[str] | None = None,
     min_price: int = MIN_PRICE_RELATED,
 ) -> list[dict[str, Any]]:
     """
@@ -278,12 +298,17 @@ async def search_tenders_by_inn(
     Args:
         page: Playwright-страница.
         inn: ИНН заказчика.
+        keywords: Список ключевых слов для поиска.
         min_price: Минимальная цена (по умолчанию 2M для расширенного поиска).
 
     Returns:
         Список словарей с данными тендеров.
     """
+    from src.config import SEARCH_KEYWORDS
+
     logger.info(f"Поиск активных тендеров для ИНН {inn} (мин. цена: {min_price})...")
+
+    effective_keywords = keywords if keywords is not None else SEARCH_KEYWORDS
 
     # 1. Переходим на страницу расширенного поиска
     await safe_goto(page, f"{BASE_URL}/extsearch/advanced")
@@ -293,7 +318,7 @@ async def search_tenders_by_inn(
     await page.fill(S["search_customers_input"], inn)
 
     # Ключевые слова (общие из SEARCH_KEYWORDS)
-    keywords_str = ", ".join(SEARCH_KEYWORDS)
+    keywords_str = ", ".join(effective_keywords)
     await page.fill(S["search_keywords_input"], keywords_str)
 
     # Исключения
@@ -316,8 +341,11 @@ async def search_tenders_by_inn(
         [str(min_price), S["search_min_price"], S["search_min_price_disp"]],
     )
 
-    # Скрывать без цены
-    await page.check(S["search_hide_price"])
+    # Скрывать без цены (checkbox visually hidden, use JS)
+    await page.evaluate(
+        "sel => { const el = document.querySelector(sel); if (el && !el.checked) el.click(); }",
+        S["search_hide_price"],
+    )
 
     # Этап: Прием заявок (значение "10")
     await page.evaluate(
