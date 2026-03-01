@@ -15,22 +15,13 @@ from playwright.async_api import (
 )
 from loguru import logger
 
-from src.config import PROXY_CONFIG
-
-
-BASE_URL = "https://rostender.info"
-
-# Таймаут навигации по умолчанию (мс).
-DEFAULT_TIMEOUT = 60_000
-
-# Пауза между запросами для снижения нагрузки на сервер (сек).
-POLITE_DELAY = 2.0
+from src.config import PROXY_CONFIG, BASE_URL, DEFAULT_TIMEOUT, POLITE_DELAY
 
 
 @asynccontextmanager
 async def create_browser(
     *,
-    headless: bool = True,
+    headless: bool = False,
 ) -> AsyncGenerator[Browser, None]:
     """Запустить Chromium через Playwright.
 
@@ -84,10 +75,27 @@ async def create_page(
         await context.close()
 
 
-async def safe_goto(page: Page, url: str) -> None:
-    """Перейти по URL с ожиданием загрузки DOM."""
-    logger.debug("Переход -> {}", url)
-    await page.goto(url, wait_until="domcontentloaded")
+async def safe_goto(page: Page, url: str, retries: int = 3) -> None:
+    """Переход по URL с ожиданием загрузки и повторными попытками."""
+    last_error = None
+    for attempt in range(retries):
+        try:
+            logger.debug("Переход -> {} (attempt {}/{})", url, attempt + 1, retries)
+            try:
+                await page.goto(url, wait_until="networkidle", timeout=30000)
+            except Exception as network_err:
+                logger.debug(
+                    "networkidle failed, trying domcontentloaded: {}", network_err
+                )
+                await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            return
+        except Exception as e:
+            last_error = e
+            if attempt < retries - 1:
+                logger.warning("Ошибка перехода, повтор через 3 сек: {}", e)
+                await asyncio.sleep(3)
+            continue
+    raise last_error if last_error else Exception(f"Failed to navigate to {url}")
 
 
 async def polite_wait() -> None:

@@ -22,6 +22,14 @@ _CONFIG_PATH = PROJECT_ROOT / "config.yaml"
 _EXAMPLE_PATH = PROJECT_ROOT / "config.yaml.example"
 
 
+# ── Настройка браузера и задержек ───────────────────────────────────────────
+BASE_URL = "https://rostender.info"
+# Таймаут навигации по умолчанию (мс).
+DEFAULT_TIMEOUT = 60_000
+# Пауза между запросами для снижения нагрузки на сервер (сек).
+POLITE_DELAY = 2.0
+
+
 def _load_config() -> dict:
     """Загрузить конфигурацию из config.yaml."""
     if not _CONFIG_PATH.exists():

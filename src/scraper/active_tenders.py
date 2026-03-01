@@ -112,7 +112,11 @@ async def search_active_tenders(
 
     effective_keywords = keywords if keywords is not None else SEARCH_KEYWORDS
 
-    # 1. Переходим на страницу расширенного поиска
+    # Сначала посещаем главную страницу для установки сессии
+    await safe_goto(page, BASE_URL)
+    await polite_wait()
+
+    # Затем переходим на страницу расширенного поиска
     await safe_goto(page, f"{BASE_URL}/extsearch/advanced")
 
     # 2. Заполняем фильтры
@@ -187,7 +191,8 @@ async def search_active_tenders(
 
     # 3. Нажимаем "Искать"
     await page.click(S["search_button"])
-    await page.wait_for_load_state("networkidle")
+    await page.wait_for_load_state("load")
+    await polite_wait()
 
     # 4. Собираем результаты со всех страниц (пагинация)
     all_tenders: list[dict[str, Any]] = []
@@ -219,7 +224,7 @@ async def search_active_tenders(
 
         # Переходим на следующую страницу
         await next_btn.click()
-        await page.wait_for_load_state("networkidle")
+        await page.wait_for_load_state("load")
         await polite_wait()
         page_num += 1
 
@@ -310,7 +315,11 @@ async def search_tenders_by_inn(
 
     effective_keywords = keywords if keywords is not None else SEARCH_KEYWORDS
 
-    # 1. Переходим на страницу расширенного поиска
+    # Сначала посещаем главную страницу для установки сессии
+    await safe_goto(page, BASE_URL)
+    await polite_wait()
+
+    # Затем переходим на страницу расширенного поиска
     await safe_goto(page, f"{BASE_URL}/extsearch/advanced")
 
     # 2. Заполняем фильтры
@@ -379,7 +388,8 @@ async def search_tenders_by_inn(
 
     # 3. Нажимаем "Искать"
     await page.click(S["search_button"])
-    await page.wait_for_load_state("networkidle")
+    await page.wait_for_load_state("load")
+    await polite_wait()
 
     # 4. Собираем результаты со всех страниц
     all_tenders: list[dict[str, Any]] = []
@@ -408,7 +418,7 @@ async def search_tenders_by_inn(
             break
 
         await next_btn.click()
-        await page.wait_for_load_state("networkidle")
+        await page.wait_for_load_state("load")
         await polite_wait()
         page_num += 1
 
