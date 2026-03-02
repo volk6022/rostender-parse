@@ -107,6 +107,14 @@ def _find_protocol_files(tender_data: dict[str, Any]) -> list[ProtocolFile]:
     protocols: list[ProtocolFile] = []
     non_flagged_protocols: list[ProtocolFile] = []
 
+    # Диагностика: общее количество файлов и дат
+    total_files = sum(len(files) for files in files_by_date.values())
+    logger.debug(
+        "files_by_date: {} дат, {} файлов всего",
+        len(files_by_date),
+        total_files,
+    )
+
     for _date, files in files_by_date.items():
         for f in files:
             pf = ProtocolFile(
@@ -133,6 +141,11 @@ def _find_protocol_files(tender_data: dict[str, Any]) -> list[ProtocolFile]:
             len(result),
             len(protocols),
             len(non_flagged_protocols),
+        )
+    else:
+        logger.debug(
+            "Протоколы не найдены среди {} файлов (is_protocol=True: 0, по заголовку: 0)",
+            total_files,
         )
 
     return result
@@ -422,6 +435,24 @@ async def analyze_tender_protocol(
     # ── 1. Переход на страницу тендера ────────────────────────────────────
     await safe_goto(page, tender_url)
     await polite_wait()
+
+    # ── Диагностика: определяем текущий этап тендера на странице ────────
+    try:
+        stage_text = await page.evaluate("""
+            () => {
+                // Ищем бейдж/метку этапа на странице тендера
+                const badge = document.querySelector('.tender-state, .state-badge, .stage-label, .tender-status');
+                if (badge) return badge.innerText.trim();
+                // Альтернатива: ищем текст «Этап:» в боковой панели
+                const allText = document.body.innerText;
+                const m = allText.match(/(?:Этап|Стадия|Статус)[:\\s]+([^\\n]{3,40})/i);
+                return m ? m[1].trim() : null;
+            }
+        """)
+        if stage_text:
+            logger.debug("Тендер {} — этап на странице: «{}»", tender_id, stage_text)
+    except Exception:
+        pass  # Не критично — чисто диагностика
 
     # ── 2. Извлечение tendersData ────────────────────────────────────────
     page_html = await page.content()

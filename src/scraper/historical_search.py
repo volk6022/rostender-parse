@@ -19,51 +19,79 @@ S = SELECTORS
 def extract_keywords_from_title(title: str) -> list[str]:
     """Извлекает ключевые слова из заголовка тендера для поиска похожих тендеров.
 
-    По ТЗ: генерирует различные интерпретации ключевых слов из заголовка.
-    Например: "Поставка электротехнического оборудования и материалов"
-    -> ["Поставка электротехнического оборудования и материалов", "Оборудование",
-        "Поставка электротехнического оборудования", "электротехническое оборудование",
-        "Поставка", "Оборудование и материалы"]
+    **Fix 3:** Полный заголовок **не** добавляется как ключевое слово — он может
+    содержать 100-200 символов (номер тендера, год, название организации), что
+    резко сужает результаты поиска (все слова должны совпадать).
+
+    Вместо этого:
+      1. Убираем ведущие номера/коды тендера (``"223785 Ремонт..."`` → ``"Ремонт..."``).
+      2. Берём первую смысловую фразу (до запятой/скобки), ограничиваем ~60 символами.
+      3. Добавляем значимые отдельные слова (>5 букв).
+      4. Добавляем совпадения из ``SEARCH_KEYWORDS``.
+
+    Например: ``"223785 Ремонт тепловой изоляции и обмуровки оборудования на 2026-2028"``
+    → ``["Ремонт тепловой изоляции и обмуровки оборудования", "Ремонт", "Тепловой",
+         "Изоляции", "Обмуровки", "Оборудование"]``
 
     Args:
         title: Заголовок тендера.
 
     Returns:
-        Список ключевых слов для поиска.
+        Список ключевых слов для поиска (до 10 штук).
     """
     from src.config import SEARCH_KEYWORDS
 
-    keywords = []
+    if not title or not title.strip():
+        return []
 
-    title_lower = title.lower()
+    # ── Очистка заголовка ──────────────────────────────────────────────────
+    # Убираем ведущие номера/коды тендера и лишние пробелы
+    clean_title = re.sub(r"^\d[\d\s\-./]*", "", title).strip()
+    if not clean_title:
+        clean_title = title.strip()
 
-    keywords.append(title)
+    title_lower = clean_title.lower()
 
-    words = re.findall(r"\b\w{4,}\b", title_lower)
+    keywords: list[str] = []
 
-    important_words = []
-    for word in words:
-        if word not in {
-            "для",
-            "что",
-            "это",
-            "котор",
-            "таким",
-            "товар",
-            "работ",
-            "услуг",
-        }:
-            important_words.append(word)
-
-    if len(title) > 10:
-        first_part = title.split(",")[0].split("(")[0].strip()
+    # ── 1. Первая смысловая фраза (до запятой / скобки), макс. 60 символов ─
+    if len(clean_title) > 10:
+        first_part = clean_title.split(",")[0].split("(")[0].strip()
+        # Убираем хвосты вида «на 2026-2028 гг.» / «для ООО «...»»
+        first_part = re.sub(r"\s+(?:на|для|от|до|по|в)\s+\d.*$", "", first_part).strip()
+        if len(first_part) > 60:
+            # Обрезаем по границе слова
+            first_part = " ".join(first_part[:60].split(" ")[:-1])
         if len(first_part) > 5:
             keywords.append(first_part)
 
-    for i, word in enumerate(important_words[:5]):
+    # ── 2. Значимые отдельные слова (>= 4 буквы, не стоп-слова) ────────────
+    words = re.findall(r"\b\w{4,}\b", title_lower)
+
+    _stop_words = {
+        "для",
+        "что",
+        "это",
+        "котор",
+        "таким",
+        "товар",
+        "работ",
+        "услуг",
+        "года",
+        "годы",
+        "период",
+        "будет",
+        "также",
+        "более",
+        "всего",
+    }
+    important_words = [w for w in words if w not in _stop_words]
+
+    for word in important_words[:5]:
         if len(word) > 5:
             keywords.append(word.capitalize())
 
+    # ── 3. Совпадения с SEARCH_KEYWORDS ────────────────────────────────────
     for general_kw in SEARCH_KEYWORDS:
         if general_kw.lower() in title_lower:
             if general_kw not in keywords:
@@ -75,8 +103,9 @@ def extract_keywords_from_title(title: str) -> list[str]:
                 ):
                     keywords.append(gen_kw)
 
-    seen = set()
-    unique_keywords = []
+    # ── 4. Дедупликация ────────────────────────────────────────────────────
+    seen: set[str] = set()
+    unique_keywords: list[str] = []
     for kw in keywords:
         kw_normalized = kw.lower().strip()
         if kw_normalized not in seen and len(kw_normalized) > 2:
@@ -142,6 +171,15 @@ async def search_historical_tenders(
 
     # ── 1. Переход на страницу расширенного поиска ────────────────────────
     await safe_goto(page, f"{BASE_URL}/extsearch/advanced")
+    # Ждём инициализации jQuery и Chosen-плагина на селектах
+    await polite_wait()
+    try:
+        await page.wait_for_selector(
+            "#states_chosen, #states + .chosen-container", timeout=10_000
+        )
+        logger.debug("Chosen-плагин инициализирован на #states")
+    except Exception:
+        logger.debug("Chosen-контейнер не найден за 10 с, продолжаем...")
 
     # ── 2. Заполнение фильтров ───────────────────────────────────────────
 
@@ -175,22 +213,37 @@ async def search_historical_tenders(
     )
 
     # Этап: Завершён (value="100")
-    await page.evaluate(
+    # Ждём, что jQuery загружен, устанавливаем значение и обновляем Chosen.
+    # Возвращаем фактическое значение select для верификации.
+    selected_value = await page.evaluate(
         """
         ([val, sel]) => {
             const select = document.querySelector(sel);
+            if (!select) return null;
+            // Сбрасываем все options, затем выбираем нужную
             Array.from(select.options).forEach(opt => opt.selected = (opt.value == val));
-            $(select).trigger('chosen:updated');
+            // Обновляем Chosen-виджет, если jQuery доступен
+            if (typeof jQuery !== 'undefined' && jQuery(select).trigger) {
+                jQuery(select).trigger('chosen:updated');
+            }
+            return select.value;
         }
     """,
         ["100", S["search_states"]],
     )
+    logger.debug("Фильтр «Этап» установлен: selected_value={}", selected_value)
 
     # Даты НЕ устанавливаем — ищем по всей истории.
 
     # ── 3. Нажимаем «Искать» ─────────────────────────────────────────────
     await page.click(S["search_button"])
-    await page.wait_for_load_state("domcontentloaded")
+    await page.wait_for_load_state("load")
+    await polite_wait()
+
+    # Логируем URL после поиска для диагностики применённых фильтров
+    current_url = page.url
+    logger.debug("URL после поиска: {}", current_url)
+
     # Ждём появления результатов (карточки тендеров) или пустого списка
     try:
         await page.wait_for_selector(
@@ -242,7 +295,7 @@ async def search_historical_tenders(
             break
 
         await next_btn.click()
-        await page.wait_for_load_state("domcontentloaded")
+        await page.wait_for_load_state("load")
         try:
             await page.wait_for_selector(S["tender_card"], timeout=15_000)
         except Exception:

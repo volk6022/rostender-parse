@@ -43,18 +43,41 @@ def _make_tender_row(
     return row
 
 
+def _make_raw_tender_item(
+    tid: str = "12345",
+    title: str = "Поставка оборудования",
+    url: str = "/region/tender/12345-tender",
+    price_text: str = "5 000 000 ₽",
+) -> dict:
+    """Create a dict matching the shape returned by page.evaluate in parse_tenders_on_page.
+
+    After Fix 1 the function extracts all card data in a single JS call;
+    the return value from ``page.evaluate()`` is a list of these dicts.
+    """
+    return {
+        "tender_id": tid or None,
+        "title": title or None,
+        "url": url,
+        "price_text": price_text,
+    }
+
+
 # ── Tests for parse_tenders_on_page ──────────────────────────────────────────
 
 
 class TestParseTendersOnPage:
-    """Tests for parse_tenders_on_page()."""
+    """Tests for parse_tenders_on_page().
+
+    After Fix 1 the function uses a single ``page.evaluate()`` call instead
+    of multiple ElementHandle round-trips, so tests now mock ``page.evaluate``
+    rather than ``page.query_selector_all`` + per-row handles.
+    """
 
     @pytest.mark.asyncio
     async def test_parses_single_tender(self) -> None:
         """Parses a single tender card correctly."""
         page = AsyncMock()
-        row = _make_tender_row()
-        page.query_selector_all = AsyncMock(return_value=[row])
+        page.evaluate = AsyncMock(return_value=[_make_raw_tender_item()])
 
         from src.scraper.active_tenders import parse_tenders_on_page
 
@@ -70,8 +93,9 @@ class TestParseTendersOnPage:
     async def test_relative_url_prefixed_with_base_url(self) -> None:
         """Relative URLs are prefixed with BASE_URL."""
         page = AsyncMock()
-        row = _make_tender_row(href="/region/tender/99")
-        page.query_selector_all = AsyncMock(return_value=[row])
+        page.evaluate = AsyncMock(
+            return_value=[_make_raw_tender_item(url="/region/tender/99")]
+        )
 
         from src.scraper.active_tenders import parse_tenders_on_page
 
@@ -83,8 +107,9 @@ class TestParseTendersOnPage:
     async def test_absolute_url_not_prefixed(self) -> None:
         """Absolute URLs are not prefixed."""
         page = AsyncMock()
-        row = _make_tender_row(href="https://other.site/tender/99")
-        page.query_selector_all = AsyncMock(return_value=[row])
+        page.evaluate = AsyncMock(
+            return_value=[_make_raw_tender_item(url="https://other.site/tender/99")]
+        )
 
         from src.scraper.active_tenders import parse_tenders_on_page
 
@@ -94,9 +119,9 @@ class TestParseTendersOnPage:
 
     @pytest.mark.asyncio
     async def test_no_rows_returns_empty(self) -> None:
-        """When no tender cards found, returns empty list."""
+        """When page.evaluate returns empty list, returns empty list."""
         page = AsyncMock()
-        page.query_selector_all = AsyncMock(return_value=[])
+        page.evaluate = AsyncMock(return_value=[])
 
         from src.scraper.active_tenders import parse_tenders_on_page
 
@@ -105,13 +130,14 @@ class TestParseTendersOnPage:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_skips_row_without_id(self) -> None:
-        """Rows without an id attribute are skipped."""
+    async def test_skips_item_without_id(self) -> None:
+        """Items without a tender_id are skipped during post-processing."""
         page = AsyncMock()
-        row = _make_tender_row(tid="")
-        # get_attribute returns empty string for id → falsy → skip
-        row.get_attribute = AsyncMock(return_value="")
-        page.query_selector_all = AsyncMock(return_value=[row])
+        page.evaluate = AsyncMock(
+            return_value=[
+                {"tender_id": None, "title": "Test", "url": "/t", "price_text": "0"},
+            ]
+        )
 
         from src.scraper.active_tenders import parse_tenders_on_page
 
@@ -120,13 +146,14 @@ class TestParseTendersOnPage:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_skips_row_without_link(self) -> None:
-        """Rows without a link element are skipped."""
+    async def test_skips_item_without_title(self) -> None:
+        """Items without a title (no link element in DOM) are skipped."""
         page = AsyncMock()
-        row = AsyncMock()
-        row.get_attribute = AsyncMock(return_value="99999")
-        row.query_selector = AsyncMock(return_value=None)
-        page.query_selector_all = AsyncMock(return_value=[row])
+        page.evaluate = AsyncMock(
+            return_value=[
+                {"tender_id": "99999", "title": None, "url": "/t", "price_text": "0"},
+            ]
+        )
 
         from src.scraper.active_tenders import parse_tenders_on_page
 
@@ -136,10 +163,9 @@ class TestParseTendersOnPage:
 
     @pytest.mark.asyncio
     async def test_no_price_defaults_to_zero(self) -> None:
-        """When price element is missing, defaults to 0."""
+        """When price_text is '0', price defaults to 0."""
         page = AsyncMock()
-        row = _make_tender_row(has_price=False)
-        page.query_selector_all = AsyncMock(return_value=[row])
+        page.evaluate = AsyncMock(return_value=[_make_raw_tender_item(price_text="0")])
 
         from src.scraper.active_tenders import parse_tenders_on_page
 
@@ -151,8 +177,7 @@ class TestParseTendersOnPage:
     async def test_custom_tender_status(self) -> None:
         """tender_status parameter is used in the result."""
         page = AsyncMock()
-        row = _make_tender_row()
-        page.query_selector_all = AsyncMock(return_value=[row])
+        page.evaluate = AsyncMock(return_value=[_make_raw_tender_item()])
 
         from src.scraper.active_tenders import parse_tenders_on_page
 
@@ -164,12 +189,13 @@ class TestParseTendersOnPage:
     async def test_multiple_tenders(self) -> None:
         """Multiple tender cards are all parsed."""
         page = AsyncMock()
-        rows = [
-            _make_tender_row(tid="1", title="First"),
-            _make_tender_row(tid="2", title="Second"),
-            _make_tender_row(tid="3", title="Third"),
-        ]
-        page.query_selector_all = AsyncMock(return_value=rows)
+        page.evaluate = AsyncMock(
+            return_value=[
+                _make_raw_tender_item(tid="1", title="First"),
+                _make_raw_tender_item(tid="2", title="Second"),
+                _make_raw_tender_item(tid="3", title="Third"),
+            ]
+        )
 
         from src.scraper.active_tenders import parse_tenders_on_page
 
@@ -179,15 +205,16 @@ class TestParseTendersOnPage:
         assert [t["tender_id"] for t in result] == ["1", "2", "3"]
 
     @pytest.mark.asyncio
-    async def test_exception_in_one_row_continues(self) -> None:
-        """Exception parsing one card doesn't stop processing."""
+    async def test_exception_in_one_item_continues(self) -> None:
+        """Exception post-processing one item doesn't stop processing others."""
         page = AsyncMock()
-
-        bad_row = AsyncMock()
-        bad_row.get_attribute = AsyncMock(side_effect=Exception("parse error"))
-
-        good_row = _make_tender_row(tid="2")
-        page.query_selector_all = AsyncMock(return_value=[bad_row, good_row])
+        # First item has price_text as a list → .replace() raises AttributeError
+        page.evaluate = AsyncMock(
+            return_value=[
+                {"tender_id": "1", "title": "Bad", "url": "/t/1", "price_text": [1, 2]},
+                _make_raw_tender_item(tid="2", title="Good"),
+            ]
+        )
 
         from src.scraper.active_tenders import parse_tenders_on_page
 
@@ -197,11 +224,26 @@ class TestParseTendersOnPage:
         assert result[0]["tender_id"] == "2"
 
     @pytest.mark.asyncio
+    async def test_evaluate_exception_returns_empty(self) -> None:
+        """If page.evaluate raises (e.g. forceReload), returns empty list."""
+        page = AsyncMock()
+        page.evaluate = AsyncMock(
+            side_effect=Exception("Execution context was destroyed")
+        )
+
+        from src.scraper.active_tenders import parse_tenders_on_page
+
+        result = await parse_tenders_on_page(page)
+
+        assert result == []
+
+    @pytest.mark.asyncio
     async def test_price_with_comma_decimal(self) -> None:
         """Price with comma as decimal separator is parsed correctly."""
         page = AsyncMock()
-        row = _make_tender_row(price_text="1 234 567,89 ₽")
-        page.query_selector_all = AsyncMock(return_value=[row])
+        page.evaluate = AsyncMock(
+            return_value=[_make_raw_tender_item(price_text="1 234 567,89 ₽")]
+        )
 
         from src.scraper.active_tenders import parse_tenders_on_page
 
@@ -647,10 +689,14 @@ class TestSubmitAndCollect:
     async def test_collects_tenders_from_single_page(self) -> None:
         """Collects tenders from a single results page (no pagination)."""
         page = AsyncMock()
-        row = _make_tender_row(tid="42", title="Tender 42")
+        sentinel = MagicMock()  # non-empty list for rows-exist check
 
-        # First call (rows check): return [row]; subsequent calls for parse: return [row]
-        page.query_selector_all = AsyncMock(return_value=[row])
+        # query_selector_all: rows-exist check returns non-empty
+        page.query_selector_all = AsyncMock(return_value=[sentinel])
+        # page.evaluate: parse_tenders_on_page returns parsed data
+        page.evaluate = AsyncMock(
+            return_value=[_make_raw_tender_item(tid="42", title="Tender 42")]
+        )
         # No next button → stop pagination
         page.query_selector = AsyncMock(return_value=None)
 
@@ -666,25 +712,33 @@ class TestSubmitAndCollect:
     async def test_pagination_follows_next_button(self) -> None:
         """Follows pagination next button across multiple pages."""
         page = AsyncMock()
-        row_a = _make_tender_row(tid="1", title="First")
-        row_b = _make_tender_row(tid="2", title="Second")
+        sentinel = MagicMock()
 
-        # query_selector_all is called TWICE per page:
-        #   1) rows check in _submit_and_collect (line 126)
-        #   2) parse_tenders_on_page (line 180)
-        # Page 1: calls 1,2 → [row_a]; Page 2: calls 3,4 → [row_b]; call 5 → []
+        # _submit_and_collect calls query_selector_all once per page for rows check.
+        # Page 1: [sentinel]; Page 2: [sentinel]; Page 3: [] (stop).
         qsa_count = 0
 
         async def mock_query_selector_all(sel: str):
             nonlocal qsa_count
             qsa_count += 1
             if qsa_count <= 2:
-                return [row_a]
-            if qsa_count <= 4:
-                return [row_b]
+                return [sentinel]
             return []
 
         page.query_selector_all = AsyncMock(side_effect=mock_query_selector_all)
+
+        # page.evaluate: parse_tenders_on_page extracts data.
+        # Called once per page with rows.
+        eval_count = 0
+
+        async def mock_evaluate(js, args=None):
+            nonlocal eval_count
+            eval_count += 1
+            if eval_count == 1:
+                return [_make_raw_tender_item(tid="1", title="First")]
+            return [_make_raw_tender_item(tid="2", title="Second")]
+
+        page.evaluate = AsyncMock(side_effect=mock_evaluate)
 
         # Next button: present after page 1, absent after page 2
         next_btn = AsyncMock()
@@ -711,8 +765,9 @@ class TestSubmitAndCollect:
     async def test_stops_when_no_next_button(self) -> None:
         """Stops pagination when no next button is found."""
         page = AsyncMock()
-        row = _make_tender_row()
-        page.query_selector_all = AsyncMock(return_value=[row])
+        sentinel = MagicMock()
+        page.query_selector_all = AsyncMock(return_value=[sentinel])
+        page.evaluate = AsyncMock(return_value=[_make_raw_tender_item()])
         page.query_selector = AsyncMock(return_value=None)
 
         with patch("src.scraper.active_tenders.polite_wait", new_callable=AsyncMock):
@@ -727,17 +782,18 @@ class TestSubmitAndCollect:
     async def test_polite_wait_called_after_submit_and_pagination(self) -> None:
         """polite_wait is called after search submit and after each pagination."""
         page = AsyncMock()
-        row = _make_tender_row()
+        sentinel = MagicMock()
 
-        # Page 1: rows, page 2: no rows (empty)
+        # Page 1: rows exist, Page 2: no rows (empty)
         call_idx = 0
 
         async def mock_qsa(sel: str):
             nonlocal call_idx
             call_idx += 1
-            return [row] if call_idx == 1 else []
+            return [sentinel] if call_idx == 1 else []
 
         page.query_selector_all = AsyncMock(side_effect=mock_qsa)
+        page.evaluate = AsyncMock(return_value=[_make_raw_tender_item()])
 
         next_btn = AsyncMock()
         qs_idx = 0

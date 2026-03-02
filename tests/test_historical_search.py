@@ -12,10 +12,24 @@ from src.scraper.historical_search import extract_keywords_from_title
 class TestExtractKeywordsFromTitle:
     """Тесты для extract_keywords_from_title()."""
 
-    def test_returns_title_as_first_keyword(self):
-        """Исходный заголовок всегда первый в списке."""
+    def test_full_title_not_first_keyword(self):
+        """Full raw title is NOT added as a keyword (Fix 3)."""
         result = extract_keywords_from_title("Поставка оборудования")
-        assert result[0] == "Поставка оборудования"
+        # The first keyword should be the first meaningful phrase, not the raw title
+        # (for short titles they may coincide, but the logic is different)
+        assert len(result) >= 1
+        # All keywords must be <= 60 chars (no raw 100+ char titles)
+        for kw in result:
+            assert len(kw) <= 60
+
+    def test_leading_number_stripped(self):
+        """Leading tender numbers/codes are stripped from keywords."""
+        result = extract_keywords_from_title(
+            "223785 Ремонт тепловой изоляции на 2026-2028 гг."
+        )
+        # "223785" should not appear in any keyword
+        for kw in result:
+            assert "223785" not in kw
 
     def test_short_words_excluded(self):
         """Слова короче 4 символов не включаются через regex \\b\\w{4,}."""
@@ -27,10 +41,7 @@ class TestExtractKeywordsFromTitle:
     def test_stopwords_excluded(self):
         """Стоп-слова (для, что, это, ...) не включаются как important_words."""
         result = extract_keywords_from_title("Товар для этого котор таким")
-        # "для", "что", "это", "котор", "таким", "товар", "работ", "услуг" are stopwords
-        # Only the full title should be present; individual stopwords should not appear
         lower_results = [r.lower() for r in result]
-        # These are all in the stopword set so none should appear individually
         for sw in ["для", "котор", "таким"]:
             assert sw not in lower_results
 
@@ -48,6 +59,14 @@ class TestExtractKeywordsFromTitle:
         )
         assert "Капитальный ремонт" in result
 
+    def test_long_first_part_capped_at_60(self):
+        """First phrase longer than 60 chars is truncated at word boundary."""
+        long_phrase = "Поставка электротехнического оборудования и специализированных комплектующих материалов"
+        result = extract_keywords_from_title(long_phrase)
+        # First keyword (the phrase) should be <= 60 chars
+        if result:
+            assert len(result[0]) <= 60
+
     def test_max_10_keywords(self):
         """Результат ограничен 10 ключевыми словами."""
         long_title = " ".join(f"Слово{i}Длинное" for i in range(20))
@@ -58,21 +77,24 @@ class TestExtractKeywordsFromTitle:
         """Дубликаты (по lower) удаляются."""
         result = extract_keywords_from_title("Поставка поставка ПОСТАВКА")
         lower_results = [r.lower() for r in result]
-        # "поставка" should appear only once (besides the full title)
         count = lower_results.count("поставка")
         assert count <= 1
 
     def test_empty_title(self):
-        """Пустой заголовок — возвращается пустой список (или только title < 3 chars)."""
+        """Пустой заголовок — возвращается пустой список."""
         result = extract_keywords_from_title("")
-        # Empty string has len 0, which is <= 2, so it's filtered out
         assert result == []
 
-    def test_short_title_not_split(self):
-        """Короткий заголовок (<= 10 chars) — первая часть не добавляется отдельно."""
+    def test_whitespace_only_title(self):
+        """Whitespace-only title returns empty list."""
+        result = extract_keywords_from_title("   ")
+        assert result == []
+
+    def test_short_title_included_as_word(self):
+        """Короткий заголовок (<= 10 chars) — first_part not extracted, but word may be."""
         result = extract_keywords_from_title("Ремонт")
-        # Title "Ремонт" is 6 chars <= 10, so first_part logic is skipped
-        assert result[0] == "Ремонт"
+        # "Ремонт" is 6 chars > 5, should appear as capitalized important word
+        assert any("ремонт" in r.lower() for r in result)
 
     @patch("src.config.SEARCH_KEYWORDS", ["Поставка", "Ремонт"])
     def test_search_keywords_matched_in_title(self):
@@ -89,26 +111,17 @@ class TestExtractKeywordsFromTitle:
         assert "Оборудование" not in result
 
     def test_important_words_capitalized(self):
-        """Важные слова (>5 символов) добавляются с заглавной буквы."""
+        """Важные слова (>5 символов) добавляются с заглавной буквой."""
         result = extract_keywords_from_title("поставка строительного оборудования")
-        # "поставка" (8 chars), "строительного" (13 chars), "оборудования" (12 chars)
-        # Should have capitalized versions
-        has_capitalized = any(
-            r[0].isupper() and r != result[0]  # not the full title
-            for r in result
-            if len(r) > 5
-        )
+        # Should have capitalized versions of long words
+        has_capitalized = any(r[0].isupper() for r in result if len(r) > 5)
         assert has_capitalized
 
     def test_words_shorter_than_6_not_added_individually(self):
         """Слова <= 5 символов не добавляются как отдельные ключевые слова."""
         result = extract_keywords_from_title("Тест крыша стена пол мебель")
-        # "тест" (4 chars) and "крыша"/"стена" (5 chars) should not appear as individual KW
-        # Only words > 5 chars get added via the `if len(word) > 5` check
-        # "мебель" is 6 chars > 5, so it should be added
-        lower_results = [
-            r.lower() for r in result if r != "Тест крыша стена пол мебель"
-        ]
+        # Filter out the first_part phrase to check individual words
+        lower_results = [r.lower() for r in result if len(r.split()) == 1]
         assert "крыша" not in lower_results  # 5 chars, not > 5
         assert "стена" not in lower_results  # 5 chars, not > 5
 
@@ -124,6 +137,7 @@ class TestSearchHistoricalTenders:
         """Returns empty list when no tender cards found on first page."""
         page = AsyncMock()
         page.query_selector_all = AsyncMock(return_value=[])
+        page.url = "https://rostender.info/extsearch/result"
 
         with (
             patch(
@@ -146,6 +160,7 @@ class TestSearchHistoricalTenders:
         """Fills INN in customer field and keywords in search field."""
         page = AsyncMock()
         page.query_selector_all = AsyncMock(return_value=[])
+        page.url = "https://rostender.info/extsearch/result"
 
         with (
             patch(
@@ -178,6 +193,7 @@ class TestSearchHistoricalTenders:
         """Custom keywords override SEARCH_KEYWORDS."""
         page = AsyncMock()
         page.query_selector_all = AsyncMock(return_value=[])
+        page.url = "https://rostender.info/extsearch/result"
 
         with (
             patch(
@@ -211,6 +227,7 @@ class TestSearchHistoricalTenders:
             ]
         )
         page.query_selector = AsyncMock(return_value=None)  # no next button
+        page.url = "https://rostender.info/extsearch/result"
 
         parsed_tenders = [
             {
@@ -258,6 +275,7 @@ class TestSearchHistoricalTenders:
         page = AsyncMock()
         page.query_selector_all = AsyncMock(return_value=[MagicMock()])
         page.query_selector = AsyncMock(return_value=None)
+        page.url = "https://rostender.info/extsearch/result"
 
         many_tenders = [
             {
@@ -295,6 +313,7 @@ class TestSearchHistoricalTenders:
     async def test_pagination_follows_next_button(self) -> None:
         """Follows pagination when next button exists and limit not reached."""
         page = AsyncMock()
+        page.url = "https://rostender.info/extsearch/result"
 
         next_btn = AsyncMock()
         call_count = 0
@@ -376,6 +395,7 @@ class TestSearchHistoricalTenders:
         page = AsyncMock()
         page.query_selector_all = AsyncMock(return_value=[MagicMock()])
         page.query_selector = AsyncMock(return_value=AsyncMock())  # next button exists
+        page.url = "https://rostender.info/extsearch/result"
 
         tenders = [
             {
@@ -416,6 +436,7 @@ class TestSearchHistoricalTenders:
         """Navigates to the extended search page."""
         page = AsyncMock()
         page.query_selector_all = AsyncMock(return_value=[])
+        page.url = "https://rostender.info/extsearch/result"
 
         with (
             patch(
@@ -439,6 +460,7 @@ class TestSearchHistoricalTenders:
         """Clicks the search button after filling filters."""
         page = AsyncMock()
         page.query_selector_all = AsyncMock(return_value=[])
+        page.url = "https://rostender.info/extsearch/result"
 
         with (
             patch(
@@ -457,3 +479,28 @@ class TestSearchHistoricalTenders:
         # Should have clicked the search button
         click_calls = [c.args[0] for c in page.click.call_args_list]
         assert any("start-search" in sel for sel in click_calls)
+
+    @pytest.mark.asyncio
+    async def test_waits_for_load_after_search(self) -> None:
+        """Uses wait_for_load_state('load') after clicking search (Fix 2)."""
+        page = AsyncMock()
+        page.query_selector_all = AsyncMock(return_value=[])
+        page.url = "https://rostender.info/extsearch/result"
+
+        with (
+            patch(
+                "src.scraper.historical_search.safe_goto",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.scraper.historical_search.polite_wait",
+                new_callable=AsyncMock,
+            ),
+        ):
+            from src.scraper.historical_search import search_historical_tenders
+
+            await search_historical_tenders(page, "1234567890")
+
+        # Should use "load" not "domcontentloaded"
+        load_calls = [c.args[0] for c in page.wait_for_load_state.call_args_list]
+        assert "load" in load_calls

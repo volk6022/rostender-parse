@@ -164,54 +164,82 @@ async def parse_tenders_on_page(
     """
     Парсит карточки тендеров на текущей странице результатов.
 
+    Извлекает все данные **одним вызовом** ``page.evaluate()`` — это
+    устраняет race-condition с ``forceReload()`` (сайт перезагружает
+    страницу при первом визите за день через ``localStorage``-хеш).
+    При множественных ElementHandle round-trip'ах хендлы становились
+    stale после reload → «Execution context was destroyed».
+
     Args:
         page: Playwright-страница с результатами поиска.
-        tender_status: Статус для записи в результат ("active" / "completed").
+        tender_status: Статус для записи в результат (``"active"`` / ``"completed"``).
 
-    Реальная структура HTML (верифицировано 19.02.2026):
+    Реальная структура HTML (верифицировано 19.02.2026)::
+
       <article class="tender-row row" id="90147690">
         <a class="description tender-info__description tender-info__link"
            href="/region/.../90147690-tender-...">Заголовок</a>
         <div class="starting-price__price starting-price--price">445 000 ₽</div>
       </article>
     """
+    # ── Атомарное извлечение данных из DOM (один JS-вызов) ──────────────
+    try:
+        raw_items: list[dict[str, Any]] = await page.evaluate(
+            """
+            (sel) => {
+                const rows = document.querySelectorAll(sel.card);
+                return Array.from(rows).map(row => {
+                    const id = row.getAttribute('id');
+                    const linkEl = row.querySelector(sel.link)
+                                || row.querySelector(sel.linkAlt);
+                    const priceEl = row.querySelector(sel.price);
+                    return {
+                        tender_id: id || null,
+                        title: linkEl ? linkEl.innerText.trim() : null,
+                        url: linkEl ? linkEl.getAttribute('href') : null,
+                        price_text: priceEl ? priceEl.innerText : '0',
+                    };
+                });
+            }
+            """,
+            {
+                "card": S["tender_card"],
+                "link": S["tender_link"],
+                "linkAlt": S["tender_link_alt"],
+                "price": S["tender_price"],
+            },
+        )
+    except Exception as e:
+        logger.error(f"Ошибка при извлечении карточек через JS: {e}")
+        return []
+
+    if not raw_items:
+        return []
+
+    logger.debug(f"Карточек на странице: {len(raw_items)}")
+
+    # ── Постобработка в Python (URL-префикс, парсинг цены) ─────────────
     tenders: list[dict[str, Any]] = []
 
-    rows = await page.query_selector_all(S["tender_card"])
-    if not rows:
-        return tenders
-
-    logger.debug(f"Карточек на странице: {len(rows)}")
-
-    for row in rows:
+    for item in raw_items:
         try:
-            # Tender ID — атрибут id у <article>
-            tender_id = await row.get_attribute("id")
-            if not tender_id:
+            tender_id = item.get("tender_id")
+            title = item.get("title")
+            if not tender_id or not title:
                 continue
 
-            # Ссылка и заголовок
-            link_el = await row.query_selector(
-                S["tender_link"]
-            ) or await row.query_selector(S["tender_link_alt"])
-            if not link_el:
-                continue
-
-            title = await link_el.inner_text()
-            url = await link_el.get_attribute("href")
+            url = item.get("url") or ""
             if url and not url.startswith("http"):
                 url = f"{BASE_URL}{url}"
 
-            # Цена
-            price_el = await row.query_selector(S["tender_price"])
-            price_text = await price_el.inner_text() if price_el else "0"
+            price_text: str = item.get("price_text") or "0"
             # Убираем всё кроме цифр и точки: "445 000 ₽" -> "445000"
             price = float(re.sub(r"[^\d.]", "", price_text.replace(",", ".")) or 0)
 
             tenders.append(
                 {
                     "tender_id": tender_id,
-                    "title": title.strip(),
+                    "title": title,
                     "url": url,
                     "price": price,
                     "status": tender_status,
