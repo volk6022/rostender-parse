@@ -44,3 +44,24 @@ async def login(page: Page) -> None:
         )
 
     logger.success("Авторизация на rostender.info успешна")
+
+
+async def ensure_logged_in(page: Page) -> None:
+    """Проверить сессию и повторно авторизоваться при необходимости.
+
+    Переходит на главную страницу и проверяет маркер авторизации.
+    Если сессия истекла — вызывает :func:`login` повторно.
+
+    Безопасно вызывать часто: если сессия активна, выполняется быстро.
+    """
+    try:
+        await safe_goto(page, BASE_URL)
+        not_logged = await page.query_selector(SELECTORS["logged_in_marker"])
+        if not_logged:
+            logger.warning("Сессия истекла — повторная авторизация...")
+            await login(page)
+        else:
+            logger.debug("Сессия активна")
+    except Exception as exc:
+        logger.warning("Ошибка проверки сессии ({}), пробуем re-login...", exc)
+        await login(page)

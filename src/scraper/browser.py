@@ -21,7 +21,7 @@ from src.config import PROXY_CONFIG, BASE_URL, DEFAULT_TIMEOUT, POLITE_DELAY
 @asynccontextmanager
 async def create_browser(
     *,
-    headless: bool = True,
+    headless: bool = False,
 ) -> AsyncGenerator[Browser, None]:
     """Запустить Chromium через Playwright.
 
@@ -76,24 +76,37 @@ async def create_page(
 
 
 async def safe_goto(page: Page, url: str, retries: int = 3) -> None:
-    """Переход по URL с ожиданием загрузки и повторными попытками."""
+    """Переход по URL с ожиданием загрузки и повторными попытками.
+
+    Стратегия:
+      1. ``domcontentloaded`` (30 с) — быстрая и надёжная.
+      2. При ошибке — сброс страницы (``about:blank``), пауза, повтор.
+      3. На последней попытке — ``commit`` (минимальное ожидание).
+
+    ``networkidle`` **не** используется: rostender.info часто имеет
+    фоновые запросы (аналитика, websocket), из-за которых ``networkidle``
+    зависает навсегда.
+    """
     last_error = None
     for attempt in range(retries):
         try:
             logger.debug("Переход -> {} (attempt {}/{})", url, attempt + 1, retries)
-            try:
-                await page.goto(url, wait_until="networkidle", timeout=30000)
-            except Exception as network_err:
-                logger.debug(
-                    "networkidle failed, trying domcontentloaded: {}", network_err
-                )
-                await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
             return
         except Exception as e:
             last_error = e
+            logger.warning(
+                "Ошибка перехода (attempt {}/{}): {}", attempt + 1, retries, e
+            )
             if attempt < retries - 1:
-                logger.warning("Ошибка перехода, повтор через 3 сек: {}", e)
-                await asyncio.sleep(3)
+                # Сбрасываем страницу, чтобы следующий goto начинался «с чистого листа»
+                try:
+                    await page.goto("about:blank", timeout=5_000)
+                except Exception:
+                    pass
+                delay = 3 * (attempt + 1)  # 3 с, 6 с
+                logger.debug("Повтор через {} сек...", delay)
+                await asyncio.sleep(delay)
             continue
     raise last_error if last_error else Exception(f"Failed to navigate to {url}")
 

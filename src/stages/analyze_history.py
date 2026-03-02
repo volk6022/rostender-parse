@@ -11,8 +11,22 @@ from src.db.repository import (
     get_tenders_by_customer,
     update_customer_status,
 )
+from src.scraper.auth import ensure_logged_in
 from src.stages._history_helpers import analyze_tender_history
 from src.stages.params import PipelineParams
+
+# Проверять сессию каждые N заказчиков
+_SESSION_CHECK_INTERVAL = 10
+# Максимум последовательных ошибок до принудительной проверки сессии
+_MAX_CONSECUTIVE_ERRORS = 3
+
+
+async def _recover_page(page: Page) -> None:
+    """Сбросить страницу в чистое состояние после ошибки."""
+    try:
+        await page.goto("about:blank", timeout=5_000)
+    except Exception:
+        pass
 
 
 async def run_analyze_history(page: Page, params: PipelineParams) -> None:
@@ -37,11 +51,24 @@ async def run_analyze_history(page: Page, params: PipelineParams) -> None:
         logger.info("Нет заказчиков для анализа (статус 'new')")
         return
 
+    consecutive_errors = 0
+
     async with get_connection() as conn:
-        for customer in new_customers:
+        for idx, customer in enumerate(new_customers):
             inn = customer["inn"]
             name = customer["name"] or inn
-            logger.info(f"Обработка заказчика {name} (ИНН {inn})...")
+            logger.info(
+                f"Обработка заказчика {name} (ИНН {inn})... "
+                f"[{idx + 1}/{len(new_customers)}]"
+            )
+
+            # Периодическая проверка сессии
+            if idx > 0 and idx % _SESSION_CHECK_INTERVAL == 0:
+                logger.debug(
+                    "Плановая проверка сессии (каждые {} заказчиков)...",
+                    _SESSION_CHECK_INTERVAL,
+                )
+                await ensure_logged_in(page)
 
             # 2.1 Обновляем статус → processing
             await update_customer_status(conn, inn, "processing")
@@ -57,6 +84,7 @@ async def run_analyze_history(page: Page, params: PipelineParams) -> None:
                     logger.info(f"Нет активных тендеров для ИНН {inn}")
                     await update_customer_status(conn, inn, "analyzed")
                     await conn.commit()
+                    consecutive_errors = 0
                     continue
 
                 # 2.3 Для каждого активного тендера — анализ истории
@@ -78,11 +106,25 @@ async def run_analyze_history(page: Page, params: PipelineParams) -> None:
 
                 await update_customer_status(conn, inn, "analyzed")
                 await conn.commit()
+                consecutive_errors = 0
                 logger.success(f"Заказчик {inn}: анализ завершён")
 
             except Exception as exc:
+                consecutive_errors += 1
                 logger.error(f"Ошибка при обработке ИНН {inn}: {exc}")
                 await update_customer_status(conn, inn, "error")
                 await conn.commit()
+
+                # Восстанавливаем страницу после ошибки
+                await _recover_page(page)
+
+                # Если подряд несколько ошибок — возможно, сессия протухла
+                if consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
+                    logger.warning(
+                        "Подряд {} ошибок — проверяем сессию и переавторизуемся...",
+                        consecutive_errors,
+                    )
+                    await ensure_logged_in(page)
+                    consecutive_errors = 0
 
     logger.info("Этап 2: завершён")

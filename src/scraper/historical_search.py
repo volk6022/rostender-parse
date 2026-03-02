@@ -190,7 +190,15 @@ async def search_historical_tenders(
 
     # ── 3. Нажимаем «Искать» ─────────────────────────────────────────────
     await page.click(S["search_button"])
-    await page.wait_for_load_state("networkidle")
+    await page.wait_for_load_state("domcontentloaded")
+    # Ждём появления результатов (карточки тендеров) или пустого списка
+    try:
+        await page.wait_for_selector(
+            f"{S['tender_card']}, .search-nothing, .search-results",
+            timeout=30_000,
+        )
+    except Exception:
+        logger.debug("Селектор результатов не найден, продолжаем...")
 
     # ── 4. Собираем результаты (пагинация, но не более limit) ─────────────
     all_tenders: list[dict[str, Any]] = []
@@ -234,7 +242,11 @@ async def search_historical_tenders(
             break
 
         await next_btn.click()
-        await page.wait_for_load_state("networkidle")
+        await page.wait_for_load_state("domcontentloaded")
+        try:
+            await page.wait_for_selector(S["tender_card"], timeout=15_000)
+        except Exception:
+            logger.debug("Карточки тендеров не появились на странице {}", page_num + 1)
         await polite_wait()
         page_num += 1
 

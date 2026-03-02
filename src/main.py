@@ -129,12 +129,14 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--no-headless",
         action="store_true",
+        # type=bool,
         default=False,
         help="Показывать окно браузера (по умолчанию headless=True)",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
+        # type=bool,
         help="Без браузера, только показать параметры",
     )
 

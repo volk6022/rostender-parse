@@ -15,8 +15,8 @@ class TestSafeGoto:
     """Tests for the safe_goto() retry logic."""
 
     @pytest.mark.asyncio
-    async def test_success_on_first_attempt_networkidle(self) -> None:
-        """When networkidle succeeds on first try, returns immediately."""
+    async def test_success_on_first_attempt(self) -> None:
+        """When domcontentloaded succeeds on first try, returns immediately."""
         page = AsyncMock()
         page.goto = AsyncMock(return_value=None)
 
@@ -25,39 +25,44 @@ class TestSafeGoto:
         await safe_goto(page, "https://example.com")
 
         page.goto.assert_called_once_with(
-            "https://example.com", wait_until="networkidle", timeout=30000
+            "https://example.com", wait_until="domcontentloaded", timeout=30_000
         )
 
     @pytest.mark.asyncio
-    async def test_fallback_to_domcontentloaded(self) -> None:
-        """When networkidle fails, falls back to domcontentloaded."""
+    async def test_retry_resets_page_with_about_blank(self) -> None:
+        """On failure, navigates to about:blank before retrying."""
         page = AsyncMock()
-        # First call (networkidle) fails, second (domcontentloaded) succeeds
-        page.goto = AsyncMock(side_effect=[Exception("networkidle timeout"), None])
-
-        from src.scraper.browser import safe_goto
-
-        await safe_goto(page, "https://example.com")
-
-        assert page.goto.call_count == 2
-        second_call = page.goto.call_args_list[1]
-        assert second_call.kwargs["wait_until"] == "domcontentloaded"
-        assert second_call.kwargs["timeout"] == 60000
-
-    @pytest.mark.asyncio
-    async def test_retry_on_both_strategies_failing(self) -> None:
-        """When both networkidle and domcontentloaded fail, retries."""
-        page = AsyncMock()
-        # Attempt 1: networkidle fails, domcontentloaded fails
-        # Attempt 2: networkidle succeeds
         call_count = 0
 
         async def mock_goto(url: str, **kwargs: object) -> None:
             nonlocal call_count
             call_count += 1
-            if call_count <= 2:  # First attempt: both fail
-                raise Exception(f"fail #{call_count}")
-            # Third call (second attempt, networkidle) succeeds
+            if call_count == 1:
+                raise Exception("timeout")
+            # about:blank (call 2) succeeds, retry (call 3) succeeds
+
+        page.goto = mock_goto
+
+        from src.scraper.browser import safe_goto
+
+        with patch("src.scraper.browser.asyncio.sleep", new_callable=AsyncMock):
+            await safe_goto(page, "https://example.com")
+
+        # 1: main URL fail, 2: about:blank reset, 3: main URL success
+        assert call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_retry_on_failure(self) -> None:
+        """When first attempt fails, retries after page reset."""
+        page = AsyncMock()
+        call_count = 0
+
+        async def mock_goto(url: str, **kwargs: object) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise Exception("fail #1")
+            # call 2 = about:blank, call 3 = retry succeeds
 
         page.goto = mock_goto
 
@@ -72,7 +77,6 @@ class TestSafeGoto:
     async def test_raises_after_all_retries_exhausted(self) -> None:
         """After all retries exhausted, raises the last error."""
         page = AsyncMock()
-        # All calls fail (both strategies on all 3 attempts = 6 calls)
         page.goto = AsyncMock(side_effect=Exception("persistent failure"))
 
         from src.scraper.browser import safe_goto
@@ -93,12 +97,12 @@ class TestSafeGoto:
             with pytest.raises(Exception, match="fail"):
                 await safe_goto(page, "https://example.com", retries=1)
 
-        # 1 retry: networkidle fails → domcontentloaded fails → no more retries
-        assert page.goto.call_count == 2
+        # 1 retry: domcontentloaded fails → no more retries (no about:blank for last attempt)
+        assert page.goto.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_sleeps_between_retries(self) -> None:
-        """On retry, sleeps 3 seconds between attempts."""
+    async def test_sleeps_between_retries_with_backoff(self) -> None:
+        """On retry, sleeps with increasing delay (3s, 6s)."""
         page = AsyncMock()
         page.goto = AsyncMock(side_effect=Exception("fail"))
 
@@ -112,8 +116,7 @@ class TestSafeGoto:
 
         # Should sleep between retries (not after last attempt)
         sleep_calls = [c.args[0] for c in mock_sleep.call_args_list]
-        assert all(s == 3 for s in sleep_calls)
-        assert len(sleep_calls) == 2  # 3 retries → 2 sleeps
+        assert sleep_calls == [3, 6]  # 3 * (attempt+1)
 
     @pytest.mark.asyncio
     async def test_raises_generic_exception_when_no_last_error(self) -> None:

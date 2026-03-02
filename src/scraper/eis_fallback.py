@@ -210,7 +210,7 @@ async def download_protocol_from_eis(
     try:
         async with page.expect_download(timeout=60_000) as download_info:
             await page.goto(protocol_url)
-            await page.wait_for_load_state("networkidle")
+            await page.wait_for_load_state("domcontentloaded")
 
         download = await download_info.value
 
