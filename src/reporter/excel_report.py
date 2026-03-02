@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any
 
 from loguru import logger
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
 from src.config import REPORTS_DIR
-
-if TYPE_CHECKING:
-    import aiosqlite
 
 
 HEADER_FILL = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
@@ -58,13 +56,15 @@ def _get_parse_status_ru(status: str) -> str:
 
 
 def generate_excel_report(
-    interesting_results: list["aiosqlite.Row"],
-    all_results: list["aiosqlite.Row"],
-    all_customers: list["aiosqlite.Row"],
-    all_protocols: list["aiosqlite.Row"],
+    interesting_results: Sequence[Any],
+    all_results: Sequence[Any],
+    all_customers: Sequence[Any],
+    all_protocols: Sequence[Any],
 ) -> Path:
     wb = Workbook()
-    wb.remove(wb.active)
+    default_sheet = wb.active
+    if default_sheet is not None:
+        wb.remove(default_sheet)
 
     _write_interesting_sheet(wb, interesting_results)
     _write_customers_sheet(wb, all_customers)
@@ -81,7 +81,7 @@ def generate_excel_report(
     return filepath
 
 
-def _write_interesting_sheet(wb: Workbook, results: list["aiosqlite.Row"]) -> None:
+def _write_interesting_sheet(wb: Workbook, results: Sequence[Any]) -> None:
     ws = wb.create_sheet("Интересные тендеры")
 
     headers = [
@@ -128,7 +128,7 @@ def _write_interesting_sheet(wb: Workbook, results: list["aiosqlite.Row"]) -> No
         ws.column_dimensions[column].width = min(max_length + 2, 60)
 
 
-def _write_customers_sheet(wb: Workbook, customers: list["aiosqlite.Row"]) -> None:
+def _write_customers_sheet(wb: Workbook, customers: Sequence[Any]) -> None:
     ws = wb.create_sheet("Все заказчики")
 
     headers = ["ИНН", "Название", "Статус", "Всего тендеров", "Активных", "Завершённых"]
@@ -162,8 +162,8 @@ def _write_customers_sheet(wb: Workbook, customers: list["aiosqlite.Row"]) -> No
 
 def _write_analysis_details_sheet(
     wb: Workbook,
-    protocols: list["aiosqlite.Row"],
-    results: list["aiosqlite.Row"],
+    protocols: Sequence[Any],
+    results: Sequence[Any],
 ) -> None:
     ws = wb.create_sheet("Детали анализа")
 
@@ -193,7 +193,10 @@ def _write_analysis_details_sheet(
 
     for row in protocols:
         customer_inn = row["customer_inn"]
-        tender_status = row.get("tender_status", "")
+        try:
+            tender_status = row["tender_status"]
+        except (IndexError, KeyError):
+            tender_status = ""
 
         ws.append(
             [

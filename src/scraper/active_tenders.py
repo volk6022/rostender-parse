@@ -19,6 +19,143 @@ from src.scraper.browser import BASE_URL, polite_wait, safe_goto
 S = SELECTORS
 
 
+# ── Внутренние хелперы (DRY) ─────────────────────────────────────────────────
+
+
+async def _navigate_to_search(page: Page) -> None:
+    """Перейти на главную → расширенный поиск (установить сессию + куки)."""
+    await safe_goto(page, BASE_URL)
+    await polite_wait()
+    await safe_goto(page, f"{BASE_URL}/extsearch/advanced")
+
+
+async def _fill_common_filters(
+    page: Page,
+    keywords: list[str],
+    min_price: int,
+) -> None:
+    """Заполнить общие фильтры формы расширенного поиска.
+
+    Включает: ключевые слова, исключения, мин. цену, скрытие без цены,
+    этап «Прием заявок», исключение аукционов и ед. поставщика.
+    """
+    # Ключевые слова
+    await page.fill(S["search_keywords_input"], ", ".join(keywords))
+
+    # Исключения
+    await page.fill(S["search_exceptions_input"], ", ".join(EXCLUDE_KEYWORDS))
+
+    # Цена от: используем скрытое поле напрямую через JS,
+    # т.к. disp-поле имеет maskMoney-плагин, который может мешать вводу.
+    await page.evaluate(
+        """
+        ([val, selPrice, selDisp]) => {
+            document.querySelector(selPrice).value = val;
+            const disp = document.querySelector(selDisp);
+            if (disp && typeof jQuery !== 'undefined' && jQuery(disp).maskMoney) {
+                jQuery(disp).maskMoney('mask', parseFloat(val));
+            } else {
+                disp.value = val;
+            }
+        }
+    """,
+        [str(min_price), S["search_min_price"], S["search_min_price_disp"]],
+    )
+
+    # Скрывать без цены (checkbox visually hidden, use JS)
+    await page.evaluate(
+        "sel => { const el = document.querySelector(sel); if (el && !el.checked) el.click(); }",
+        S["search_hide_price"],
+    )
+
+    # Этап: Прием заявок (значение "10").
+    # Используем jQuery + Chosen plugin.
+    await page.evaluate(
+        """
+        ([val, sel]) => {
+            const select = document.querySelector(sel);
+            Array.from(select.options).forEach(opt => opt.selected = (opt.value == val));
+            $(select).trigger('chosen:updated');
+        }
+    """,
+        ["10", S["search_states"]],
+    )
+
+    # Способ размещения: исключить Аукционы (1) и Ед. поставщик (28)
+    await page.evaluate(
+        """
+        ([exclude_vals, sel]) => {
+            const select = document.querySelector(sel);
+            Array.from(select.options).forEach(opt => {
+                if (exclude_vals.includes(opt.value)) {
+                    opt.selected = false;
+                } else {
+                    opt.selected = true;
+                }
+            });
+            $(select).trigger('chosen:updated');
+        }
+    """,
+        [["1", "28"], S["search_placement_ways"]],
+    )
+
+
+async def _submit_and_collect(
+    page: Page,
+    *,
+    log_context: str = "",
+    empty_warning: str = "Результаты поиска не найдены",
+) -> list[dict[str, Any]]:
+    """Нажать «Искать» и собрать результаты со всех страниц пагинации.
+
+    Args:
+        page: Playwright-страница с заполненной формой.
+        log_context: Контекст для лог-сообщений (напр. ``"для ИНН 123"``).
+        empty_warning: Сообщение, если на первой странице нет результатов.
+    """
+    await page.click(S["search_button"])
+    await page.wait_for_load_state("load")
+    await polite_wait()
+
+    all_tenders: list[dict[str, Any]] = []
+    page_num = 1
+
+    while True:
+        logger.info("Парсинг страницы #{} {}...", page_num, log_context)
+
+        rows = await page.query_selector_all(S["tender_card"])
+        if not rows:
+            if page_num == 1:
+                logger.warning(empty_warning) if not log_context else logger.info(
+                    empty_warning
+                )
+            break
+
+        page_tenders = await parse_tenders_on_page(page)
+        all_tenders.extend(page_tenders)
+        logger.info(
+            "Страница {}: найдено {} тендеров (всего: {})",
+            page_num,
+            len(page_tenders),
+            len(all_tenders),
+        )
+
+        next_btn = await page.query_selector(S["pagination_next"])
+        if not next_btn:
+            logger.debug("Следующей страницы нет — пагинация завершена")
+            break
+
+        await next_btn.click()
+        await page.wait_for_load_state("load")
+        await polite_wait()
+        page_num += 1
+
+    return all_tenders
+
+
+# ── Парсинг карточек ─────────────────────────────────────────────────────────
+
+
 async def parse_tenders_on_page(
     page: Page,
     *,
@@ -86,6 +223,9 @@ async def parse_tenders_on_page(
     return tenders
 
 
+# ── Публичные функции поиска ─────────────────────────────────────────────────
+
+
 async def search_active_tenders(
     page: Page,
     *,
@@ -112,75 +252,8 @@ async def search_active_tenders(
 
     effective_keywords = keywords if keywords is not None else SEARCH_KEYWORDS
 
-    # Сначала посещаем главную страницу для установки сессии
-    await safe_goto(page, BASE_URL)
-    await polite_wait()
-
-    # Затем переходим на страницу расширенного поиска
-    await safe_goto(page, f"{BASE_URL}/extsearch/advanced")
-
-    # 2. Заполняем фильтры
-    # Ключевые слова
-    keywords_str = ", ".join(effective_keywords)
-    await page.fill(S["search_keywords_input"], keywords_str)
-
-    # Исключения
-    exclude_str = ", ".join(EXCLUDE_KEYWORDS)
-    await page.fill(S["search_exceptions_input"], exclude_str)
-
-    # Цена от: используем скрытое поле напрямую через JS,
-    # т.к. disp-поле имеет maskMoney-плагин, который может мешать вводу.
-    await page.evaluate(
-        """
-        ([val, selPrice, selDisp]) => {
-            document.querySelector(selPrice).value = val;
-            const disp = document.querySelector(selDisp);
-            if (disp && typeof jQuery !== 'undefined' && jQuery(disp).maskMoney) {
-                jQuery(disp).maskMoney('mask', parseFloat(val));
-            } else {
-                disp.value = val;
-            }
-        }
-    """,
-        [str(min_price), S["search_min_price"], S["search_min_price_disp"]],
-    )
-
-    # Скрывать без цены (checkbox visually hidden, use JS)
-    await page.evaluate(
-        "sel => { const el = document.querySelector(sel); if (el && !el.checked) el.click(); }",
-        S["search_hide_price"],
-    )
-
-    # Этап: Прием заявок (значение "10").
-    # Используем jQuery + Chosen plugin.
-    await page.evaluate(
-        """
-        ([val, sel]) => {
-            const select = document.querySelector(sel);
-            Array.from(select.options).forEach(opt => opt.selected = (opt.value == val));
-            $(select).trigger('chosen:updated');
-        }
-    """,
-        ["10", S["search_states"]],
-    )
-
-    # Способ размещения: исключить Аукционы (1) и Ед. поставщик (28)
-    await page.evaluate(
-        """
-        ([exclude_vals, sel]) => {
-            const select = document.querySelector(sel);
-            Array.from(select.options).forEach(opt => {
-                if (exclude_vals.includes(opt.value)) {
-                    opt.selected = false;
-                } else {
-                    opt.selected = true;
-                }
-            });
-            $(select).trigger('chosen:updated');
-        }
-    """,
-        [["1", "28"], S["search_placement_ways"]],
-    )
+    await _navigate_to_search(page)
+    await _fill_common_filters(page, effective_keywords, min_price)
 
     # Дата публикации: из параметров или "сегодня"
     effective_date_from = date_from or datetime.now().strftime("%d.%m.%Y")
@@ -189,44 +262,10 @@ async def search_active_tenders(
     await page.fill(S["search_date_to"], effective_date_to)
     logger.debug("Фильтр дат: {} — {}", effective_date_from, effective_date_to)
 
-    # 3. Нажимаем "Искать"
-    await page.click(S["search_button"])
-    await page.wait_for_load_state("load")
-    await polite_wait()
-
-    # 4. Собираем результаты со всех страниц (пагинация)
-    all_tenders: list[dict[str, Any]] = []
-    page_num = 1
-
-    while True:
-        logger.info(f"Парсинг страницы результатов #{page_num}...")
-
-        # Проверяем, есть ли карточки тендеров на странице
-        rows = await page.query_selector_all(S["tender_card"])
-        if not rows:
-            if page_num == 1:
-                logger.warning("Результаты поиска не найдены")
-            break
-
-        # Парсим текущую страницу
-        page_tenders = await parse_tenders_on_page(page)
-        all_tenders.extend(page_tenders)
-        logger.info(
-            f"Страница {page_num}: найдено {len(page_tenders)} тендеров "
-            f"(всего: {len(all_tenders)})"
-        )
-
-        # Проверяем наличие кнопки "Следующая"
-        next_btn = await page.query_selector(S["pagination_next"])
-        if not next_btn:
-            logger.debug("Следующей страницы нет — пагинация завершена")
-            break
-
-        # Переходим на следующую страницу
-        await next_btn.click()
-        await page.wait_for_load_state("load")
-        await polite_wait()
-        page_num += 1
+    all_tenders = await _submit_and_collect(
+        page,
+        empty_warning="Результаты поиска не найдены",
+    )
 
     logger.info(f"Итого найдено активных тендеров: {len(all_tenders)}")
     return all_tenders
@@ -315,112 +354,18 @@ async def search_tenders_by_inn(
 
     effective_keywords = keywords if keywords is not None else SEARCH_KEYWORDS
 
-    # Сначала посещаем главную страницу для установки сессии
-    await safe_goto(page, BASE_URL)
-    await polite_wait()
+    await _navigate_to_search(page)
 
-    # Затем переходим на страницу расширенного поиска
-    await safe_goto(page, f"{BASE_URL}/extsearch/advanced")
-
-    # 2. Заполняем фильтры
-    # ИНН заказчика
+    # ИНН заказчика (специфичное поле, только для этого варианта поиска)
     await page.fill(S["search_customers_input"], inn)
 
-    # Ключевые слова (общие из SEARCH_KEYWORDS)
-    keywords_str = ", ".join(effective_keywords)
-    await page.fill(S["search_keywords_input"], keywords_str)
+    await _fill_common_filters(page, effective_keywords, min_price)
 
-    # Исключения
-    exclude_str = ", ".join(EXCLUDE_KEYWORDS)
-    await page.fill(S["search_exceptions_input"], exclude_str)
-
-    # Цена от
-    await page.evaluate(
-        """
-        ([val, selPrice, selDisp]) => {
-            document.querySelector(selPrice).value = val;
-            const disp = document.querySelector(selDisp);
-            if (disp && typeof jQuery !== 'undefined' && jQuery(disp).maskMoney) {
-                jQuery(disp).maskMoney('mask', parseFloat(val));
-            } else {
-                disp.value = val;
-            }
-        }
-    """,
-        [str(min_price), S["search_min_price"], S["search_min_price_disp"]],
+    all_tenders = await _submit_and_collect(
+        page,
+        log_context=f"для ИНН {inn}",
+        empty_warning=f"Тендеры для ИНН {inn} не найдены",
     )
-
-    # Скрывать без цены (checkbox visually hidden, use JS)
-    await page.evaluate(
-        "sel => { const el = document.querySelector(sel); if (el && !el.checked) el.click(); }",
-        S["search_hide_price"],
-    )
-
-    # Этап: Прием заявок (значение "10")
-    await page.evaluate(
-        """
-        ([val, sel]) => {
-            const select = document.querySelector(sel);
-            Array.from(select.options).forEach(opt => opt.selected = (opt.value == val));
-            $(select).trigger('chosen:updated');
-        }
-    """,
-        ["10", S["search_states"]],
-    )
-
-    # Способ размещения: исключить Аукционы (1) и Ед. поставщик (28)
-    await page.evaluate(
-        """
-        ([exclude_vals, sel]) => {
-            const select = document.querySelector(sel);
-            Array.from(select.options).forEach(opt => {
-                if (exclude_vals.includes(opt.value)) {
-                    opt.selected = false;
-                } else {
-                    opt.selected = true;
-                }
-            });
-            $(select).trigger('chosen:updated');
-        }
-    """,
-        [["1", "28"], S["search_placement_ways"]],
-    )
-
-    # 3. Нажимаем "Искать"
-    await page.click(S["search_button"])
-    await page.wait_for_load_state("load")
-    await polite_wait()
-
-    # 4. Собираем результаты со всех страниц
-    all_tenders: list[dict[str, Any]] = []
-    page_num = 1
-
-    while True:
-        logger.info(f"Парсинг страницы #{page_num} для ИНН {inn}...")
-
-        rows = await page.query_selector_all(S["tender_card"])
-        if not rows:
-            if page_num == 1:
-                logger.info(f"Тендеры для ИНН {inn} не найдены")
-            break
-
-        page_tenders = await parse_tenders_on_page(page)
-        all_tenders.extend(page_tenders)
-        logger.info(
-            f"Страница {page_num}: найдено {len(page_tenders)} тендеров "
-            f"(всего: {len(all_tenders)})"
-        )
-
-        # Следующая страница
-        next_btn = await page.query_selector(S["pagination_next"])
-        if not next_btn:
-            logger.debug("Следующей страницы нет — пагинация завершена")
-            break
-
-        await next_btn.click()
-        await page.wait_for_load_state("load")
-        await polite_wait()
-        page_num += 1
 
     logger.info(f"Для ИНН {inn} найдено тендеров: {len(all_tenders)}")
     return all_tenders

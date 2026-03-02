@@ -30,16 +30,17 @@ async def login(page: Page) -> None:
 
     # Отправляем форму
     await page.click(SELECTORS["login_button"])
-    # await page.wait_for_load_state("networkidle")
+    await page.wait_for_load_state("domcontentloaded")
+    await polite_wait()
 
     # Проверяем успешность входа:
     # Класс .header--notLogged присутствует только у неавторизованных пользователей.
     # Если он всё ещё есть после отправки формы — логин не удался.
-    # not_logged = await page.query_selector(SELECTORS["logged_in_marker"])
-    # if not_logged:
-    #     raise RuntimeError(
-    #         "Авторизация на rostender.info не удалась. "
-    #         "Проверьте rostender_login и rostender_password в config.yaml"
-    #     )
+    not_logged = await page.query_selector(SELECTORS["logged_in_marker"])
+    if not_logged:
+        raise RuntimeError(
+            "Авторизация на rostender.info не удалась. "
+            "Проверьте rostender_login и rostender_password в config.yaml"
+        )
 
     logger.success("Авторизация на rostender.info успешна")

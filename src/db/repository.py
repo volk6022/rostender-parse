@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
 import aiosqlite
 from loguru import logger
@@ -75,13 +76,13 @@ async def update_customer_status(
 async def get_customers_by_status(
     conn: aiosqlite.Connection,
     status: str,
-) -> list[aiosqlite.Row]:
+) -> Sequence[Any]:
     """Получить заказчиков по статусу."""
     cursor = await conn.execute(
         "SELECT * FROM customers WHERE status = ?",
         (status,),
     )
-    return await cursor.fetchall()
+    return list(await cursor.fetchall())
 
 
 # ── Tenders ─────────────────────────────────────────────────────────────────────
@@ -130,7 +131,7 @@ async def get_tenders_by_customer(
     customer_inn: str,
     tender_status: str | None = None,
     limit: int | None = None,
-) -> list[aiosqlite.Row]:
+) -> Sequence[Any]:
     """Получить тендеры заказчика с опциональной фильтрацией по статусу."""
     query = "SELECT * FROM tenders WHERE customer_inn = ?"
     params: list = [customer_inn]
@@ -146,15 +147,15 @@ async def get_tenders_by_customer(
         params.append(limit)
 
     cursor = await conn.execute(query, params)
-    return await cursor.fetchall()
+    return list(await cursor.fetchall())
 
 
-async def get_active_tenders(conn: aiosqlite.Connection) -> list[aiosqlite.Row]:
+async def get_active_tenders(conn: aiosqlite.Connection) -> Sequence[Any]:
     """Получить все активные тендеры."""
     cursor = await conn.execute(
         "SELECT * FROM tenders WHERE tender_status = 'active' ORDER BY price DESC"
     )
-    return await cursor.fetchall()
+    return list(await cursor.fetchall())
 
 
 # ── Protocol Analysis ───────────────────────────────────────────────────────────
@@ -190,7 +191,7 @@ async def upsert_protocol_analysis(
 async def get_protocol_analyses_for_customer(
     conn: aiosqlite.Connection,
     customer_inn: str,
-) -> list[aiosqlite.Row]:
+) -> Sequence[Any]:
     """Получить результаты анализа протоколов для тендеров заказчика."""
     cursor = await conn.execute(
         """
@@ -201,7 +202,7 @@ async def get_protocol_analyses_for_customer(
         """,
         (customer_inn,),
     )
-    return await cursor.fetchall()
+    return list(await cursor.fetchall())
 
 
 # ── Results ─────────────────────────────────────────────────────────────────────
@@ -244,7 +245,7 @@ async def insert_result(
     )
 
 
-async def get_interesting_results(conn: aiosqlite.Connection) -> list[aiosqlite.Row]:
+async def get_interesting_results(conn: aiosqlite.Connection) -> Sequence[Any]:
     """Получить все интересные результаты с данными тендеров и заказчиков."""
     cursor = await conn.execute(
         """
@@ -261,12 +262,12 @@ async def get_interesting_results(conn: aiosqlite.Connection) -> list[aiosqlite.
         ORDER BY r.competition_ratio DESC
         """
     )
-    return await cursor.fetchall()
+    return list(await cursor.fetchall())
 
 
 async def get_interesting_customers(
     conn: aiosqlite.Connection,
-) -> list[aiosqlite.Row]:
+) -> Sequence[Any]:
     """Получить список уникальных ИНН заказчиков с интересными результатами."""
     cursor = await conn.execute(
         """
@@ -276,7 +277,7 @@ async def get_interesting_customers(
         WHERE r.is_interesting = 1
         """
     )
-    return await cursor.fetchall()
+    return list(await cursor.fetchall())
 
 
 async def tender_exists(
@@ -309,7 +310,7 @@ async def get_latest_protocol_analyses(
     conn: aiosqlite.Connection,
     customer_inn: str,
     tender_ids: list[str],
-) -> list[aiosqlite.Row]:
+) -> Sequence[Any]:
     """Получить результаты анализа протоколов только для указанных тендеров."""
     if not tender_ids:
         return []
@@ -323,13 +324,13 @@ async def get_latest_protocol_analyses(
         """,
         (customer_inn, *tender_ids),
     )
-    return await cursor.fetchall()
+    return list(await cursor.fetchall())
 
 
 # ── Reports ──────────────────────────────────────────────────────────────────────
 
 
-async def get_all_customers(conn: aiosqlite.Connection) -> list[aiosqlite.Row]:
+async def get_all_customers(conn: aiosqlite.Connection) -> Sequence[Any]:
     """Получить всех заказчиков с информацией о тендерах."""
     cursor = await conn.execute(
         """
@@ -347,10 +348,10 @@ async def get_all_customers(conn: aiosqlite.Connection) -> list[aiosqlite.Row]:
         ORDER BY c.inn
         """
     )
-    return await cursor.fetchall()
+    return list(await cursor.fetchall())
 
 
-async def get_all_results(conn: aiosqlite.Connection) -> list[aiosqlite.Row]:
+async def get_all_results(conn: aiosqlite.Connection) -> Sequence[Any]:
     """Получить все результаты с данными тендеров и заказчиков."""
     cursor = await conn.execute(
         """
@@ -366,10 +367,10 @@ async def get_all_results(conn: aiosqlite.Connection) -> list[aiosqlite.Row]:
         ORDER BY r.is_interesting DESC, r.competition_ratio DESC
         """
     )
-    return await cursor.fetchall()
+    return list(await cursor.fetchall())
 
 
-async def get_all_protocol_analyses(conn: aiosqlite.Connection) -> list[aiosqlite.Row]:
+async def get_all_protocol_analyses(conn: aiosqlite.Connection) -> Sequence[Any]:
     """Получить все результаты анализа протоколов с данными тендеров."""
     cursor = await conn.execute(
         """
@@ -383,4 +384,4 @@ async def get_all_protocol_analyses(conn: aiosqlite.Connection) -> list[aiosqlit
         ORDER BY pa.analyzed_at DESC
         """
     )
-    return await cursor.fetchall()
+    return list(await cursor.fetchall())

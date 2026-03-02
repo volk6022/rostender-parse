@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Sequence
+from typing import Any
 
 from loguru import logger
 
-if TYPE_CHECKING:
-    import aiosqlite
-
 
 def print_console_report(
-    interesting_results: list["aiosqlite.Row"],
-    all_results: list["aiosqlite.Row"],
-    all_customers: list["aiosqlite.Row"],
+    interesting_results: Sequence[Any],
+    all_results: Sequence[Any],
+    all_customers: Sequence[Any],
 ) -> None:
     total_interesting = len(interesting_results)
     total_results = len(all_results)

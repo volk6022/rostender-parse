@@ -8,9 +8,10 @@ Rostender Parser — это CLI-инструмент для автоматиче
 
 ```mermaid
 flowchart TB
-    subgraph CLI["main.py — CLI Entry Point"]
+    subgraph CLI["main.py — CLI Dispatcher"]
         direction TB
-        run["run() async"]
+        run["run() async — dispatcher"]
+        subcommands["Subcommands:<br/>run | search-active | analyze-history<br/>extended-search | report"]
     end
 
     subgraph ConfigYAML["config.yaml — User Configuration"]
@@ -24,6 +25,14 @@ flowchart TB
         dirs["Paths (DATA_DIR, DOWNLOADS_DIR, REPORTS_DIR)"]
         params["Loaded Parameters from YAML"]
         selectors["CSS Selectors for rostender.info"]
+    end
+
+    subgraph Stages["stages/ — Pipeline Stages"]
+        pp["params.py<br/>PipelineParams dataclass"]
+        s1["search_active.py<br/>Stage 1: Find active tenders"]
+        s2["analyze_history.py<br/>Stage 2: Analyze customer history"]
+        s3["extended_search.py<br/>Stage 3: Extended search"]
+        s4["report.py<br/>Stage 4: Generate reports"]
     end
 
     subgraph Scraper["scraper/ — Web Scraping"]
@@ -56,12 +65,12 @@ flowchart TB
     end
 
     ConfigYAML --> Config
-    CLI --> Config
-    CLI --> Scraper
-    CLI --> Parser
-    CLI --> Analyzer
-    CLI --> DB
-    CLI --> Reporter
+    CLI --> Stages
+    Stages --> Scraper
+    Stages --> Parser
+    Stages --> Analyzer
+    Stages --> DB
+    Stages --> Reporter
 
     auth --> browser
     Scraper --> Parser
@@ -75,54 +84,75 @@ flowchart TB
 ```mermaid
 sequenceDiagram
     participant User
+    participant Dispatcher as main.py
     participant Browser
     participant rostender as rostender.info
     participant eis as zakupki.gov.ru
     participant DB
     participant Reporter
 
-    User->>Browser: Launch pipeline
+    User->>Dispatcher: rostender [command]
 
-    Note over Browser,rostender: Single browser session for entire pipeline
+    alt Full pipeline (run)
+        Note over Browser,rostender: Single browser session for stages 1-3
+    else Individual stage
+        Note over Browser,rostender: Own browser session per stage
+    end
 
-    Browser->>rostender: 0. Login (username + password)
-    rostender-->>Browser: Session cookies
+    Dispatcher->>Browser: Create browser + login
 
-    Browser->>rostender: 1. Search active tenders
-    rostender-->>Browser: Tender list
-    Browser->>DB: Save tenders + customers
+    rect rgb(230, 245, 255)
+        Note over Browser,DB: Stage 1: search-active
+        Browser->>rostender: Search active tenders
+        rostender-->>Browser: Tender list
+        Browser->>rostender: Extract INN per tender
+        rostender-->>Browser: Customer INN + name
+        Browser->>DB: Save tenders + customers (status=new)
+    end
 
-    loop For each customer (INN)
-        Browser->>rostender: 2. Search historical tenders
-        rostender-->>Browser: Completed tenders
-        Browser->>DB: Save historical tenders
+    rect rgb(230, 255, 230)
+        Note over Browser,DB: Stage 2: analyze-history
+        DB-->>Browser: Customers with status=new
+        loop For each customer
+            loop For each active tender
+                Browser->>rostender: Search historical tenders
+                rostender-->>Browser: Completed tenders
+                Browser->>DB: Save historical tenders
 
-        loop For each historical tender
-            Browser->>rostender: 3. Get protocol
-            rostender-->>Browser: Protocol files
-            
-            alt No protocol on rostender
-                Browser->>eis: Fallback to EIS
-                eis-->>Browser: Protocol from EIS
+                loop For each historical tender
+                    Browser->>rostender: Get protocol
+                    rostender-->>Browser: Protocol files
+
+                    alt No protocol on rostender
+                        Browser->>eis: Fallback to EIS
+                        eis-->>Browser: Protocol from EIS
+                    end
+
+                    Browser->>Browser: Parse protocol (PDF/DOCX/TXT)
+                    Browser->>DB: Save participant count
+                end
+
+                Browser->>Browser: Calculate competition metrics
+                Browser->>DB: Save result (source=primary)
             end
-            
-            Browser->>Browser: Parse protocol<br/>(PDF/DOCX/TXT)
-            Browser->>DB: Save participant count
         end
-        
-        Browser->>Browser: 4. Calculate competition metrics
     end
 
-    Note over Browser,rostender: Extended search for interesting customers
-
-    loop For each interesting customer
-        Browser->>rostender: 5. Search all active tenders (lower price)
-        rostender-->>Browser: Extended tender list
-        Browser->>DB: Save + analyze new tenders
+    rect rgb(255, 245, 230)
+        Note over Browser,DB: Stage 3: extended-search
+        DB-->>Browser: Interesting customers
+        loop For each interesting customer
+            Browser->>rostender: Search all active tenders (lower price)
+            rostender-->>Browser: Extended tender list
+            Browser->>DB: Save + analyze new tenders (source=extended)
+        end
     end
 
-    DB->>Reporter: 6. Generate report
-    Reporter-->>User: Console + Excel output
+    rect rgb(245, 230, 255)
+        Note over DB,Reporter: Stage 4: report (no browser)
+        DB->>Reporter: Read all data
+        Reporter-->>User: Console + Excel output
+    end
 ```
 
 ## Configuration
@@ -157,6 +187,65 @@ Loads `config.yaml` and exports typed constants for use by other modules.
 - If `rostender_login` or `rostender_password` is empty → error at startup
 
 ## Module Details
+
+### `main.py` — CLI Dispatcher
+
+Thin entry point (~150 lines) that:
+- Parses CLI arguments with subcommands via `argparse`
+- Creates `PipelineParams` from CLI args + config.yaml defaults
+- Configures logging, ensures directories, initializes DB
+- Dispatches to the appropriate stage(s)
+
+For full pipeline (`rostender` / `rostender run`), all stages share a single browser session. For individual stages, each gets its own browser + login.
+
+### `stages/` — Pipeline Stages
+
+Each stage is an independently runnable unit. Stages communicate through the SQLite database — each reads from and writes to specific tables/statuses.
+
+#### `params.py`
+
+```mermaid
+classDiagram
+    class PipelineParams {
+        +keywords: list[str]
+        +min_price_active: int
+        +min_price_related: int
+        +min_price_historical: int
+        +history_limit: int
+        +max_participants: int
+        +ratio_threshold: float
+        +date_from: str | None
+        +date_to: str | None
+        +output_formats: list[str]
+        +headless: bool
+        +from_args(args) PipelineParams$
+    }
+```
+
+**Functions:**
+- `PipelineParams.from_args(args)` — Factory that merges CLI arguments with config.yaml defaults
+
+#### `search_active.py` — Stage 1
+
+- `run_search_active(page, params)` — Search active tenders, extract INN (with EIS fallback), save to DB
+- **DB writes:** `customers` (status=`new`), `tenders` (status=`active`)
+
+#### `analyze_history.py` — Stage 2
+
+- `run_analyze_history(page, params)` — For each customer with status `new`: search historical tenders, parse protocols, calculate metrics
+- **DB reads:** `customers` (status=`new`), `tenders` (status=`active`)
+- **DB writes:** `tenders` (status=`completed`), `protocol_analysis`, `results` (source=`primary`)
+
+#### `extended_search.py` — Stage 3
+
+- `run_extended_search(page, params)` — For interesting customers: find more active tenders, analyze their history
+- **DB reads:** `results` (is_interesting=`true`)
+- **DB writes:** `tenders`, `protocol_analysis`, `results` (source=`extended`)
+
+#### `report.py` — Stage 4
+
+- `run_report(params)` — Generate console + Excel reports from DB data. **No browser required.**
+- **DB reads:** all tables
 
 ### `scraper/` — Web Scraping
 
@@ -200,7 +289,7 @@ classDiagram
 - `safe_goto(page, url)` — Navigate with DOM wait
 - `polite_wait()` — 2-second delay between requests
 
-**Session architecture:** The pipeline uses a single `Browser` → single `BrowserContext` → single `Page` for the entire run. Login is performed once; cookies persist across all navigation within the session.
+**Session architecture:** For the full pipeline (`rostender run`), a single `Browser` → single `BrowserContext` → single `Page` is used for stages 1-3. Login is performed once; cookies persist across all navigation within the session. When running individual stages (`rostender search-active`, etc.), each stage creates its own browser session with a separate login.
 
 #### `active_tenders.py`
 
@@ -459,45 +548,41 @@ flowchart LR
         cli_args["CLI Arguments<br/>(optional overrides)"]
     end
 
-    subgraph Stage0["Stage 0: Auth"]
-        login["Login to rostender.info"]
+    subgraph Dispatch["main.py — Dispatcher"]
+        params["PipelineParams"]
+        auth["Login to rostender.info"]
     end
 
-    subgraph Stage1["Stage 1: Active Tenders"]
+    subgraph Stage1["search-active"]
         scraper1["Scrape rostender.info"]
         extract1["Extract INN"]
     end
 
-    subgraph Stage2["Stage 2: Historical Search"]
+    subgraph Stage2["analyze-history"]
         scraper2["Find completed tenders"]
-        download["Download protocols"]
-    end
-
-    subgraph Stage3["Stage 3: Analysis"]
-        parse["Parse documents"]
+        download["Download & parse protocols"]
         analyze["Calculate metrics"]
     end
 
-    subgraph Stage3ext["Stage 3+: Extended Search"]
+    subgraph Stage3["extended-search"]
         extended["Find more tenders<br/>for interesting customers"]
     end
 
-    subgraph Stage4["Stage 4: Reports"]
+    subgraph Stage4["report"]
         console["Console output"]
         excel["Excel report"]
     end
 
-    Input --> Stage0
-    Stage0 --> Stage1
+    Input --> Dispatch
+    Dispatch --> Stage1
     Stage1 --> Stage2
     Stage2 --> Stage3
-    Stage3 --> Stage3ext
-    Stage3ext --> Stage4
+    Stage3 --> Stage4
 
-    Stage1 --> DB[(SQLite)]
-    Stage2 --> DB
-    Stage3 --> DB
-    Stage3ext --> DB
+    Stage1 <--> DB[(SQLite)]
+    Stage2 <--> DB
+    Stage3 <--> DB
+    Stage4 --> DB
 ```
 
 ## File Structure
@@ -526,7 +611,16 @@ rostender-parse/
 ├── src/
 │   ├── __init__.py
 │   ├── config.py             # Configuration loader (reads config.yaml)
-│   ├── main.py               # CLI entry point, pipeline orchestration
+│   ├── main.py               # CLI dispatcher with subcommands
+│   │
+│   ├── stages/               # Pipeline stages (independently runnable)
+│   │   ├── __init__.py
+│   │   ├── params.py         # PipelineParams dataclass + factory
+│   │   ├── _history_helpers.py # Shared helper for historical analysis (internal)
+│   │   ├── search_active.py  # Stage 1: Search active tenders + extract INN
+│   │   ├── analyze_history.py # Stage 2: Historical search + protocol parsing
+│   │   ├── extended_search.py # Stage 3: Extended search for interesting customers
+│   │   └── report.py         # Stage 4: Console + Excel report generation
 │   │
 │   ├── scraper/
 │   │   ├── __init__.py
@@ -559,10 +653,28 @@ rostender-parse/
 │
 └── tests/
     ├── __init__.py
-    ├── conftest.py            # Fixtures: MockRow, sample data, in-memory DB
-    ├── test_parser.py         # Tests for participant_patterns.py
-    ├── test_analyzer.py       # Tests for competition.py
-    └── test_repository.py     # Tests for repository.py
+    ├── conftest.py                    # Fixtures: MockRow, sample data, in-memory DB
+    ├── test_active_tenders.py         # Tests for scraper/active_tenders.py (parse, extract INN, search, _fill_common_filters, _submit_and_collect)
+    ├── test_analyzer.py               # Tests for competition.py (calculate_metrics + log_metrics)
+    ├── test_analyze_history_stage.py   # Tests for stages/analyze_history.py orchestration
+    ├── test_auth.py                   # Tests for scraper/auth.py (login flow)
+    ├── test_browser.py                # Tests for scraper/browser.py (safe_goto, polite_wait, create_browser/page)
+    ├── test_config.py                 # Tests for config.py (paths, constants, validation)
+    ├── test_console_report.py         # Tests for console_report.py
+    ├── test_docx_parser.py            # Tests for parser/docx_parser.py (_analyze_tables + main fn)
+    ├── test_eis_fallback.py           # Tests for scraper/eis_fallback.py (EIS INN extraction, search, protocol)
+    ├── test_excel_report.py           # Tests for excel_report.py (unit + integration)
+    ├── test_extended_search_stage.py  # Tests for stages/extended_search.py orchestration
+    ├── test_historical_search.py      # Tests for scraper/historical_search.py (keywords + async search)
+    ├── test_history_helpers.py        # Tests for stages/_history_helpers.py
+    ├── test_html_protocol.py          # Tests for parser/html_protocol.py (pure functions + async protocol analysis)
+    ├── test_main.py                   # Tests for main.py (CLI parsing, run dispatcher, _configure_logging, _ensure_dirs, main)
+    ├── test_params.py                 # Tests for PipelineParams dataclass + factory
+    ├── test_parser.py                 # Tests for participant_patterns.py
+    ├── test_pdf_parser.py             # Tests for parser/pdf_parser.py (is_scan_pdf + main fn)
+    ├── test_report_stage.py           # Tests for stages/report.py orchestration
+    ├── test_repository.py             # Tests for repository.py (all CRUD + get_connection, init_db)
+    └── test_search_active_stage.py    # Tests for stages/search_active.py orchestration
 ```
 
 ## Dependencies
@@ -582,15 +694,28 @@ rostender-parse/
 cp config.yaml.example config.yaml
 # Edit config.yaml: fill in rostender_login and rostender_password
 
-# Run full pipeline
+# Run full pipeline (all stages 1-4, single browser session)
 rostender
+rostender run
 
 # Or directly
 python -m src.main
 
+# Run individual stages
+rostender search-active          # Stage 1: Search active tenders
+rostender analyze-history        # Stage 2: Analyze customer history
+rostender extended-search        # Stage 3: Extended search
+rostender report                 # Stage 4: Generate report (no browser)
+
 # Check parameters without launching browser
 rostender --dry-run
 
-# Override config values via CLI
+# Override config values via CLI (works with any subcommand)
 rostender --keywords Поставка Оборудование --min-price 10000000 --days-back 14
+rostender search-active -k Поставка --min-price 10000000
+rostender report                 # Generate report from existing DB data
+
+# Show browser window for debugging (default: headless)
+rostender --no-headless
+rostender search-active --no-headless
 ```

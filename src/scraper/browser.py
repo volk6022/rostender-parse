@@ -21,7 +21,7 @@ from src.config import PROXY_CONFIG, BASE_URL, DEFAULT_TIMEOUT, POLITE_DELAY
 @asynccontextmanager
 async def create_browser(
     *,
-    headless: bool = False,
+    headless: bool = True,
 ) -> AsyncGenerator[Browser, None]:
     """Запустить Chromium через Playwright.
 

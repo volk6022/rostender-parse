@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 from src.analyzer.competition import (
     CompetitionMetrics,
     calculate_metrics,
+    log_metrics,
 )
 from tests.conftest import MockRow
 
@@ -201,3 +204,66 @@ class TestCompetitionMetrics:
         assert metrics.competition_ratio == 0.75
         assert metrics.is_interesting is True
         assert metrics.is_determinable is True
+
+
+class TestLogMetrics:
+    """Tests for log_metrics function."""
+
+    def test_logs_warning_when_not_determinable(self) -> None:
+        """Logs warning when metrics are not determinable."""
+        metrics = CompetitionMetrics(
+            total_historical=3,
+            total_analyzed=0,
+            total_skipped=3,
+            low_competition_count=0,
+            competition_ratio=None,
+            is_interesting=False,
+            is_determinable=False,
+        )
+
+        with patch("src.analyzer.competition.logger") as mock_logger:
+            log_metrics("1234567890", metrics)
+
+        mock_logger.warning.assert_called_once()
+        call_args = mock_logger.warning.call_args
+        assert "1234567890" in str(call_args)
+        mock_logger.info.assert_not_called()
+
+    def test_logs_info_when_interesting(self) -> None:
+        """Logs info with ИНТЕРЕСНЫЙ status when interesting."""
+        metrics = CompetitionMetrics(
+            total_historical=5,
+            total_analyzed=5,
+            total_skipped=0,
+            low_competition_count=4,
+            competition_ratio=0.8,
+            is_interesting=True,
+            is_determinable=True,
+        )
+
+        with patch("src.analyzer.competition.logger") as mock_logger:
+            log_metrics("9876543210", metrics)
+
+        mock_logger.info.assert_called_once()
+        call_args = str(mock_logger.info.call_args)
+        assert "9876543210" in call_args
+        assert "ИНТЕРЕСНЫЙ" in call_args
+        mock_logger.warning.assert_not_called()
+
+    def test_logs_info_when_not_interesting(self) -> None:
+        """Logs info with 'не интересный' status when not interesting."""
+        metrics = CompetitionMetrics(
+            total_historical=5,
+            total_analyzed=5,
+            total_skipped=0,
+            low_competition_count=1,
+            competition_ratio=0.2,
+            is_interesting=False,
+            is_determinable=True,
+        )
+
+        with patch("src.analyzer.competition.logger") as mock_logger:
+            log_metrics("5555555555", metrics)
+
+        call_args = str(mock_logger.info.call_args)
+        assert "не интересный" in call_args

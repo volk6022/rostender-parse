@@ -4,11 +4,15 @@
 Пути и CSS-селекторы вычисляются/хранятся в Python.
 """
 
-import sys
+from __future__ import annotations
+
+import logging
 from pathlib import Path
 
 import yaml
 
+
+_logger = logging.getLogger(__name__)
 
 # ── Пути (вычисляемые, не в YAML) ───────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -30,43 +34,70 @@ DEFAULT_TIMEOUT = 60_000
 POLITE_DELAY = 2.0
 
 
+class ConfigError(Exception):
+    """Ошибка конфигурации — файл не найден, неверный формат или пустые поля."""
+
+
 def _load_config() -> dict:
-    """Загрузить конфигурацию из config.yaml."""
+    """Загрузить конфигурацию из config.yaml.
+
+    Возвращает пустой словарь, если файл отсутствует (позволяет импортировать
+    модуль в тестах без config.yaml).  Полная валидация — через
+    :func:`validate_config`.
+    """
     if not _CONFIG_PATH.exists():
-        print(
-            f"ОШИБКА: Файл конфигурации не найден: {_CONFIG_PATH}\n"
-            f"Скопируйте шаблон и заполните данные для входа:\n"
-            f"  cp config.yaml.example config.yaml",
-            file=sys.stderr,
+        _logger.warning(
+            "config.yaml не найден (%s). "
+            "Используются значения по умолчанию. "
+            "Вызовите validate_config() перед запуском pipeline.",
+            _CONFIG_PATH,
         )
-        sys.exit(1)
+        return {}
 
     with open(_CONFIG_PATH, "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
 
     if not isinstance(cfg, dict):
-        print(
-            "ОШИБКА: config.yaml имеет неверный формат (ожидается YAML-словарь)",
-            file=sys.stderr,
+        _logger.warning(
+            "config.yaml имеет неверный формат (ожидается YAML-словарь). "
+            "Используются значения по умолчанию."
         )
-        sys.exit(1)
+        return {}
 
     return cfg
 
 
 _cfg = _load_config()
 
-# ── Авторизация (обязательно) ────────────────────────────────────────────────
+# ── Авторизация (обязательно для работы, но не при импорте) ───────────────
 ROSTENDER_LOGIN: str = _cfg.get("rostender_login", "")
 ROSTENDER_PASSWORD: str = _cfg.get("rostender_password", "")
 
-if not ROSTENDER_LOGIN or not ROSTENDER_PASSWORD:
-    print(
-        "ОШИБКА: rostender_login и rostender_password обязательны в config.yaml.\n"
-        "Укажите логин и пароль от rostender.info.",
-        file=sys.stderr,
-    )
-    sys.exit(1)
+
+def validate_config() -> None:
+    """Проверить, что обязательные поля конфигурации заполнены.
+
+    Вызывается из ``main()`` перед запуском pipeline.
+    Бросает :class:`ConfigError` при ошибках, а не ``sys.exit()`` — это
+    позволяет безопасно импортировать ``src.config`` из тестов.
+
+    Raises:
+        ConfigError: если config.yaml отсутствует, имеет неверный формат,
+            или обязательные поля пусты.
+    """
+    if not _CONFIG_PATH.exists():
+        raise ConfigError(
+            f"Файл конфигурации не найден: {_CONFIG_PATH}\n"
+            f"Скопируйте шаблон и заполните данные для входа:\n"
+            f"  cp {_EXAMPLE_PATH.name} {_CONFIG_PATH.name}"
+        )
+
+    if not ROSTENDER_LOGIN or not ROSTENDER_PASSWORD:
+        raise ConfigError(
+            "rostender_login и rostender_password обязательны в config.yaml.\n"
+            "Укажите логин и пароль от rostender.info."
+        )
+
 
 # ── Прокси (опционально) ──────────────────────────────────────────────────────
 _proxy_server: str = _cfg.get("proxy_server", "")

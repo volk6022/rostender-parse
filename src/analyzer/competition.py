@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import Any
 
 from loguru import logger
 
@@ -11,9 +12,6 @@ from src.config import (
     COMPETITION_RATIO_THRESHOLD,
     MAX_PARTICIPANTS_THRESHOLD,
 )
-
-if TYPE_CHECKING:
-    import aiosqlite
 
 
 @dataclass
@@ -28,7 +26,7 @@ class CompetitionMetrics:
 
 
 def calculate_metrics(
-    analyses: list["aiosqlite.Row"],
+    analyses: Sequence[Any],
     max_participants: int = MAX_PARTICIPANTS_THRESHOLD,
     ratio_threshold: float = COMPETITION_RATIO_THRESHOLD,
 ) -> CompetitionMetrics:
