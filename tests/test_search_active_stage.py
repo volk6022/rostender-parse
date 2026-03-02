@@ -80,7 +80,7 @@ class TestRunSearchActive:
             patch(
                 "src.stages.search_active.extract_inn_from_page",
                 new_callable=AsyncMock,
-                return_value="7712345678",
+                return_value=("7712345678", "eis:https://eis/1"),
             ),
             patch(
                 "src.stages.search_active.get_customer_name",
@@ -111,6 +111,7 @@ class TestRunSearchActive:
                 tender_id="T-1",
                 customer_inn="7712345678",
                 url=tender["url"],
+                source_urls="eis:https://eis/1",
                 title=tender["title"],
                 price=tender["price"],
                 tender_status="active",
@@ -133,12 +134,12 @@ class TestRunSearchActive:
             patch(
                 "src.stages.search_active.extract_inn_from_page",
                 new_callable=AsyncMock,
-                return_value=None,
+                return_value=(None, None),
             ),
             patch(
                 "src.stages.search_active.fallback_extract_inn",
                 new_callable=AsyncMock,
-                return_value="9900001111",
+                return_value=("9900001111", "eis:https://eis/99"),
             ) as mock_fallback,
             patch(
                 "src.stages.search_active.get_customer_name",
@@ -180,12 +181,12 @@ class TestRunSearchActive:
             patch(
                 "src.stages.search_active.extract_inn_from_page",
                 new_callable=AsyncMock,
-                return_value=None,
+                return_value=(None, None),
             ),
             patch(
                 "src.stages.search_active.fallback_extract_inn",
                 new_callable=AsyncMock,
-                return_value=None,
+                return_value=(None, None),
             ),
             patch(
                 "src.stages.search_active.upsert_customer", new_callable=AsyncMock
@@ -220,7 +221,7 @@ class TestRunSearchActive:
             patch(
                 "src.stages.search_active.extract_inn_from_page",
                 new_callable=AsyncMock,
-                side_effect=["111", "222"],
+                side_effect=[("111", "s1"), ("222", "s2")],
             ),
             patch(
                 "src.stages.search_active.get_customer_name",

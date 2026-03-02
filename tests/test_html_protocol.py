@@ -418,69 +418,6 @@ class TestParseDownloadedFile:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# _try_get_eis_link (async)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-
-class TestTryGetEisLink:
-    """Tests for _try_get_eis_link() async function."""
-
-    @pytest.mark.asyncio
-    async def test_finds_eis_link(self) -> None:
-        """Returns EIS URL when link element found."""
-        page = AsyncMock()
-        eis_el = AsyncMock()
-        eis_el.get_attribute = AsyncMock(
-            return_value="https://zakupki.gov.ru/order/123"
-        )
-        page.query_selector = AsyncMock(return_value=eis_el)
-
-        from src.parser.html_protocol import _try_get_eis_link
-
-        result = await _try_get_eis_link(page)
-
-        assert result == "https://zakupki.gov.ru/order/123"
-
-    @pytest.mark.asyncio
-    async def test_returns_none_when_no_element(self) -> None:
-        """Returns None when no EIS link element found."""
-        page = AsyncMock()
-        page.query_selector = AsyncMock(return_value=None)
-
-        from src.parser.html_protocol import _try_get_eis_link
-
-        result = await _try_get_eis_link(page)
-
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_returns_none_when_href_is_none(self) -> None:
-        """Returns None when element has no href."""
-        page = AsyncMock()
-        eis_el = AsyncMock()
-        eis_el.get_attribute = AsyncMock(return_value=None)
-        page.query_selector = AsyncMock(return_value=eis_el)
-
-        from src.parser.html_protocol import _try_get_eis_link
-
-        result = await _try_get_eis_link(page)
-
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_returns_none_on_exception(self) -> None:
-        """Returns None when query_selector raises."""
-        page = AsyncMock()
-        page.query_selector = AsyncMock(side_effect=Exception("DOM error"))
-
-        from src.parser.html_protocol import _try_get_eis_link
-
-        result = await _try_get_eis_link(page)
-
-        assert result is None
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # _save_result (async)
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -766,6 +703,15 @@ class TestAnalyzeTenderProtocol:
             patch("src.parser.html_protocol.safe_goto", new_callable=AsyncMock),
             patch("src.parser.html_protocol.polite_wait", new_callable=AsyncMock),
             patch(
+                "src.parser.html_protocol.extract_source_urls",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "src.parser.html_protocol.update_tender_source_urls",
+                new_callable=AsyncMock,
+            ),
+            patch(
                 "src.parser.html_protocol.upsert_protocol_analysis",
                 new_callable=AsyncMock,
             ),
@@ -785,11 +731,6 @@ class TestAnalyzeTenderProtocol:
         page = AsyncMock()
         page.content = AsyncMock(return_value="<html>no data</html>")
 
-        eis_el = AsyncMock()
-        eis_el.get_attribute = AsyncMock(
-            return_value="https://zakupki.gov.ru/order/123"
-        )
-        page.query_selector = AsyncMock(return_value=eis_el)
         conn = AsyncMock()
 
         eis_result = ProtocolParseResult(
@@ -804,6 +745,15 @@ class TestAnalyzeTenderProtocol:
         with (
             patch("src.parser.html_protocol.safe_goto", new_callable=AsyncMock),
             patch("src.parser.html_protocol.polite_wait", new_callable=AsyncMock),
+            patch(
+                "src.parser.html_protocol.extract_source_urls",
+                new_callable=AsyncMock,
+                return_value="eis:https://eis/1",
+            ),
+            patch(
+                "src.parser.html_protocol.update_tender_source_urls",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "src.parser.html_protocol._try_eis_protocol",
                 new_callable=AsyncMock,
@@ -834,12 +784,20 @@ class TestAnalyzeTenderProtocol:
 
         page = AsyncMock()
         page.content = AsyncMock(return_value=page_html)
-        page.query_selector = AsyncMock(return_value=None)  # no EIS link
         conn = AsyncMock()
 
         with (
             patch("src.parser.html_protocol.safe_goto", new_callable=AsyncMock),
             patch("src.parser.html_protocol.polite_wait", new_callable=AsyncMock),
+            patch(
+                "src.parser.html_protocol.extract_source_urls",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "src.parser.html_protocol.update_tender_source_urls",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "src.parser.html_protocol.upsert_protocol_analysis",
                 new_callable=AsyncMock,
@@ -886,6 +844,15 @@ class TestAnalyzeTenderProtocol:
         with (
             patch("src.parser.html_protocol.safe_goto", new_callable=AsyncMock),
             patch("src.parser.html_protocol.polite_wait", new_callable=AsyncMock),
+            patch(
+                "src.parser.html_protocol.extract_source_urls",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "src.parser.html_protocol.update_tender_source_urls",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "src.parser.html_protocol._download_protocol",
                 new_callable=AsyncMock,
@@ -955,6 +922,15 @@ class TestAnalyzeTenderProtocol:
             patch("src.parser.html_protocol.safe_goto", new_callable=AsyncMock),
             patch("src.parser.html_protocol.polite_wait", new_callable=AsyncMock),
             patch(
+                "src.parser.html_protocol.extract_source_urls",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "src.parser.html_protocol.update_tender_source_urls",
+                new_callable=AsyncMock,
+            ),
+            patch(
                 "src.parser.html_protocol._download_protocol",
                 new_callable=AsyncMock,
                 side_effect=mock_download,
@@ -1005,12 +981,20 @@ class TestAnalyzeTenderProtocol:
 
         page = AsyncMock()
         page.content = AsyncMock(return_value=page_html)
-        page.query_selector = AsyncMock(return_value=None)  # no EIS
         conn = AsyncMock()
 
         with (
             patch("src.parser.html_protocol.safe_goto", new_callable=AsyncMock),
             patch("src.parser.html_protocol.polite_wait", new_callable=AsyncMock),
+            patch(
+                "src.parser.html_protocol.extract_source_urls",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "src.parser.html_protocol.update_tender_source_urls",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "src.parser.html_protocol._download_protocol",
                 new_callable=AsyncMock,

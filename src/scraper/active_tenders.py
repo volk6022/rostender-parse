@@ -13,6 +13,7 @@ from src.config import (
     MIN_PRICE_RELATED,
     SELECTORS,
 )
+from src.scraper.source_links import extract_source_urls
 from src.scraper.browser import BASE_URL, polite_wait, safe_goto
 
 # Короткий алиас для читаемости.
@@ -76,6 +77,7 @@ async def _fill_common_filters(
             const select = document.querySelector(sel);
             Array.from(select.options).forEach(opt => opt.selected = (opt.value == val));
             $(select).trigger('chosen:updated');
+            $(select).trigger('change');
         }
     """,
         ["10", S["search_states"]],
@@ -94,6 +96,7 @@ async def _fill_common_filters(
                 }
             });
             $(select).trigger('chosen:updated');
+            $(select).trigger('change');
         }
     """,
         [["1", "28"], S["search_placement_ways"]],
@@ -299,36 +302,33 @@ async def search_active_tenders(
     return all_tenders
 
 
-async def extract_inn_from_page(page: Page, tender_url: str) -> str | None:
+async def extract_inn_from_page(
+    page: Page, tender_url: str
+) -> tuple[str | None, str | None]:
     """
-    Переходит на страницу тендера и пытается извлечь ИНН заказчика.
+    Переходит на страницу тендера и пытается извлечь ИНН заказчика и внешние ссылки.
+    Возвращает (inn, source_urls).
     """
     await safe_goto(page, tender_url)
     await polite_wait()
+
+    source_urls = await extract_source_urls(page)
 
     # Поиск ИНН в атрибуте 'inn' кнопки
     btn = await page.query_selector(S["inn_button"])
     if btn:
         inn = await btn.get_attribute("inn")
         if inn and inn.strip():
-            return inn.strip()
+            return inn.strip(), source_urls
 
     # Если в атрибуте нет, ищем в тексте страницы (ИНН: 1234567890)
     content = await page.content()
     inn_match = re.search(r"ИНН\s*:?\s*(\d{10,12})", content)
     if inn_match:
-        return inn_match.group(1)
-
-    # Попробуем найти ссылку на ЕИС (zakupki.gov.ru)
-    eis_link_el = await page.query_selector(S["eis_link"])
-    if eis_link_el:
-        eis_url = await eis_link_el.get_attribute("href")
-        logger.debug(
-            f"Найдена ЕИС-ссылка: {eis_url} (фоллбэк не реализован, см. Шаг 5)"
-        )
+        return inn_match.group(1), source_urls
 
     logger.warning(f"ИНН не найден для тендера: {tender_url}")
-    return None
+    return None, source_urls
 
 
 async def get_customer_name(page: Page) -> str | None:

@@ -94,7 +94,7 @@ async def upsert_tender(
     tender_id: str,
     customer_inn: str,
     url: str | None = None,
-    eis_url: str | None = None,
+    source_urls: str | None = None,
     title: str | None = None,
     price: float | None = None,
     publish_date: str | None = None,
@@ -103,26 +103,38 @@ async def upsert_tender(
     """Вставить или обновить тендер."""
     await conn.execute(
         """
-        INSERT INTO tenders (tender_id, customer_inn, url, eis_url, title, price, publish_date, tender_status)
+        INSERT INTO tenders (tender_id, customer_inn, url, source_urls, title, price, publish_date, tender_status)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(tender_id) DO UPDATE SET
-            url          = COALESCE(excluded.url, tenders.url),
-            eis_url      = COALESCE(excluded.eis_url, tenders.eis_url),
-            title        = COALESCE(excluded.title, tenders.title),
-            price        = COALESCE(excluded.price, tenders.price),
-            publish_date = COALESCE(excluded.publish_date, tenders.publish_date),
+            url           = COALESCE(excluded.url, tenders.url),
+            source_urls   = COALESCE(excluded.source_urls, tenders.source_urls),
+            title         = COALESCE(excluded.title, tenders.title),
+            price         = COALESCE(excluded.price, tenders.price),
+            publish_date  = COALESCE(excluded.publish_date, tenders.publish_date),
             tender_status = excluded.tender_status
         """,
         (
             tender_id,
             customer_inn,
             url,
-            eis_url,
+            source_urls,
             title,
             price,
             publish_date,
             tender_status,
         ),
+    )
+
+
+async def update_tender_source_urls(
+    conn: aiosqlite.Connection,
+    tender_id: str,
+    source_urls: str,
+) -> None:
+    """Обновить список внешних ссылок на источники для тендера."""
+    await conn.execute(
+        "UPDATE tenders SET source_urls = ? WHERE tender_id = ?",
+        (source_urls, tender_id),
     )
 
 

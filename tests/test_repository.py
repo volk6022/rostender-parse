@@ -18,6 +18,7 @@ from src.db.repository import (
     tender_exists,
     result_exists,
     update_customer_status,
+    update_tender_source_urls,
     upsert_customer,
     upsert_tender,
     upsert_protocol_analysis,
@@ -105,6 +106,25 @@ class TestTenders:
 
         not_exists = await tender_exists(test_db, "tender_nonexistent")
         assert not_exists is False
+
+    @pytest.mark.asyncio
+    async def test_update_tender_source_urls(
+        self, test_db: aiosqlite.Connection
+    ) -> None:
+        """Тест обновления ссылок на источники тендера."""
+        await upsert_customer(test_db, inn="123", name="C")
+        await upsert_tender(
+            test_db, tender_id="t1", customer_inn="123", tender_status="active"
+        )
+
+        await update_tender_source_urls(test_db, "t1", "eis:url1,gpb:url2")
+
+        cursor = await test_db.execute(
+            "SELECT source_urls FROM tenders WHERE tender_id = 't1'"
+        )
+        row = await cursor.fetchone()
+        assert row is not None
+        assert row["source_urls"] == "eis:url1,gpb:url2"
 
 
 class TestProtocolAnalysis:

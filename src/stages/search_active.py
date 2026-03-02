@@ -41,13 +41,20 @@ async def run_search_active(page: Page, params: PipelineParams) -> None:
 
     async with get_connection() as conn:
         for t_data in active_tenders:
-            # 1.2 Для каждого тендера заходим внутрь для извлечения ИНН
+            # 1.2 Для каждого тендера заходим внутрь для извлечения ИНН и ссылок
             logger.info(f"Обработка тендера {t_data['tender_id']}...")
-            inn = await extract_inn_from_page(page, t_data["url"])
+            inn, source_urls = await extract_inn_from_page(page, t_data["url"])
 
             if not inn:
                 logger.info("ИНН не найден на rostender.info, пробуем ЕИС...")
-                inn = await fallback_extract_inn(page, t_data["url"])
+                inn, fallback_source_urls = await fallback_extract_inn(
+                    page, t_data["url"]
+                )
+                if fallback_source_urls:
+                    if not source_urls:
+                        source_urls = fallback_source_urls
+                    elif fallback_source_urls not in source_urls:
+                        source_urls = f"{source_urls},{fallback_source_urls}"
 
             if not inn:
                 logger.warning(f"Пропуск тендера {t_data['tender_id']} (ИНН не найден)")
@@ -63,6 +70,7 @@ async def run_search_active(page: Page, params: PipelineParams) -> None:
                 tender_id=t_data["tender_id"],
                 customer_inn=inn,
                 url=t_data["url"],
+                source_urls=source_urls,
                 title=t_data["title"],
                 price=t_data["price"],
                 tender_status="active",

@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS tenders (
     tender_id       TEXT PRIMARY KEY,
     customer_inn    TEXT NOT NULL,
     url             TEXT,
-    eis_url         TEXT,
+    source_urls     TEXT,
     title           TEXT,
     price           REAL,
     publish_date    DATETIME,

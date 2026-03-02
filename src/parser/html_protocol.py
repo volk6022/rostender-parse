@@ -22,7 +22,10 @@ from loguru import logger
 from playwright.async_api import Page
 
 from src.config import DOWNLOADS_DIR, KEEP_DOWNLOADED_DOCS
-from src.db.repository import upsert_protocol_analysis
+from src.db.repository import (
+    update_tender_source_urls,
+    upsert_protocol_analysis,
+)
 from src.parser.docx_parser import extract_participants_from_docx
 from src.parser.participant_patterns import (
     ParticipantResult,
@@ -31,6 +34,7 @@ from src.parser.participant_patterns import (
 from src.parser.pdf_parser import extract_participants_from_pdf, is_scan_pdf
 from src.scraper.browser import polite_wait, safe_goto
 from src.scraper.eis_fallback import fallback_get_protocol
+from src.scraper.source_links import extract_source_urls, get_source_url
 
 
 @dataclass
@@ -312,19 +316,6 @@ def _parse_downloaded_file(file_path: Path) -> tuple[ParticipantResult, str]:
         )
 
 
-async def _try_get_eis_link(page: Page) -> str | None:
-    """Пытается найти ссылку на ЕИС со страницы тендера rostender.info."""
-    try:
-        eis_link_el = await page.query_selector("a[href*='zakupki.gov.ru']")
-        if eis_link_el:
-            eis_url = await eis_link_el.get_attribute("href")
-            if eis_url:
-                return eis_url
-    except Exception as e:
-        logger.debug("Ошибка при поиске ссылки на ЕИС: {}", e)
-    return None
-
-
 async def _try_eis_protocol(
     page: Page,
     eis_url: str,
@@ -436,6 +427,12 @@ async def analyze_tender_protocol(
     await safe_goto(page, tender_url)
     await polite_wait()
 
+    # Извлекаем и сохраняем ссылки на источники (всегда, для всех тендеров)
+    source_urls = await extract_source_urls(page)
+    if source_urls:
+        await update_tender_source_urls(conn, tender_id, source_urls)
+        await conn.commit()
+
     # ── Диагностика: определяем текущий этап тендера на странице ────────
     try:
         stage_text = await page.evaluate("""
@@ -460,7 +457,7 @@ async def analyze_tender_protocol(
 
     if tender_data is None:
         # Пробуем EIS фоллбэк
-        eis_url = await _try_get_eis_link(page)
+        eis_url = get_source_url(source_urls, "eis")
         if eis_url:
             logger.info("tendersData не найден, пробуем ЕИС: {}", eis_url)
             return await _try_eis_protocol(page, eis_url, tender_id, customer_inn, conn)
@@ -481,7 +478,7 @@ async def analyze_tender_protocol(
 
     if not protocols:
         # Пробуем EIS фоллбэк
-        eis_url = await _try_get_eis_link(page)
+        eis_url = get_source_url(source_urls, "eis")
         if eis_url:
             logger.info(
                 "Протоколы не найдены на rostender.info, пробуем ЕИС: {}", eis_url

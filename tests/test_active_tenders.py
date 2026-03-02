@@ -274,9 +274,14 @@ class TestExtractInnFromPage:
         ):
             from src.scraper.active_tenders import extract_inn_from_page
 
-            result = await extract_inn_from_page(page, "https://rostender/t/1")
+            with patch(
+                "src.scraper.active_tenders.extract_source_urls",
+                new_callable=AsyncMock,
+                return_value="eis:https://eis/1",
+            ):
+                result = await extract_inn_from_page(page, "https://rostender/t/1")
 
-        assert result == "1234567890"
+        assert result == ("1234567890", "eis:https://eis/1")
 
     @pytest.mark.asyncio
     async def test_finds_inn_in_page_content_regex(self) -> None:
@@ -291,9 +296,14 @@ class TestExtractInnFromPage:
         ):
             from src.scraper.active_tenders import extract_inn_from_page
 
-            result = await extract_inn_from_page(page, "https://rostender/t/1")
+            with patch(
+                "src.scraper.active_tenders.extract_source_urls",
+                new_callable=AsyncMock,
+                return_value=None,
+            ):
+                result = await extract_inn_from_page(page, "https://rostender/t/1")
 
-        assert result == "9876543210"
+        assert result == ("9876543210", None)
 
     @pytest.mark.asyncio
     async def test_returns_none_when_inn_not_found(self) -> None:
@@ -308,9 +318,14 @@ class TestExtractInnFromPage:
         ):
             from src.scraper.active_tenders import extract_inn_from_page
 
-            result = await extract_inn_from_page(page, "https://rostender/t/1")
+            with patch(
+                "src.scraper.active_tenders.extract_source_urls",
+                new_callable=AsyncMock,
+                return_value=None,
+            ):
+                result = await extract_inn_from_page(page, "https://rostender/t/1")
 
-        assert result is None
+        assert result == (None, None)
 
     @pytest.mark.asyncio
     async def test_button_with_empty_inn_falls_through(self) -> None:
@@ -335,9 +350,14 @@ class TestExtractInnFromPage:
         ):
             from src.scraper.active_tenders import extract_inn_from_page
 
-            result = await extract_inn_from_page(page, "https://rostender/t/1")
+            with patch(
+                "src.scraper.active_tenders.extract_source_urls",
+                new_callable=AsyncMock,
+                return_value=None,
+            ):
+                result = await extract_inn_from_page(page, "https://rostender/t/1")
 
-        assert result == "1111111111"
+        assert result == ("1111111111", None)
 
 
 # ── Tests for get_customer_name ──────────────────────────────────────────────

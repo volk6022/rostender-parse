@@ -225,6 +225,7 @@ async def search_historical_tenders(
             // Обновляем Chosen-виджет, если jQuery доступен
             if (typeof jQuery !== 'undefined' && jQuery(select).trigger) {
                 jQuery(select).trigger('chosen:updated');
+                jQuery(select).trigger('change');
             }
             return select.value;
         }

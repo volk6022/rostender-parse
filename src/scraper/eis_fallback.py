@@ -230,31 +230,29 @@ async def download_protocol_from_eis(
         return None
 
 
-async def fallback_extract_inn(page: Page, tender_url: str) -> str | None:
-    """Фоллбэк для извлечения ИНН через ЕИС.
+async def fallback_extract_inn(
+    page: Page, tender_url: str
+) -> tuple[str | None, str | None]:
+    """Извлекает ИНН, переходя по ссылке на ЕИС со страницы тендера.
 
-    Используется когда на rostender.info ИНН не найден в атрибуте.
-
-    Args:
-        page: Playwright-страница.
-        tender_url: URL тендера на rostender.info.
-
-    Returns:
-        ИНН заказчика или None.
+    Возвращает (inn, source_urls).
     """
     await safe_goto(page, tender_url)
     await polite_wait()
 
     eis_link_el = await page.query_selector("a[href*='zakupki.gov.ru']")
     if not eis_link_el:
-        logger.debug("ЕИС-ссылка не найдена на странице тендера")
-        return None
+        return None, None
 
     eis_url = await eis_link_el.get_attribute("href")
     if not eis_url:
-        return None
+        return None, None
 
-    return await extract_inn_from_eis(page, eis_url)
+    # Формируем source_urls в формате "eis:url"
+    source_urls = f"eis:{eis_url}"
+
+    inn = await extract_inn_from_eis(page, eis_url)
+    return inn, source_urls
 
 
 async def fallback_get_protocol(

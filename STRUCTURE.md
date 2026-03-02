@@ -40,6 +40,7 @@ flowchart TB
         browser["browser.py<br/>Browser & Page management"]
         active["active_tenders.py<br/>Search active tenders"]
         historical["historical_search.py<br/>Search completed tenders"]
+        source_links["source_links.py<br/>Extract source URLs"]
         eis["eis_fallback.py<br/>Fallback to zakupki.gov.ru"]
     end
 
@@ -306,6 +307,13 @@ classDiagram
 - `search_historical_tenders(page, customer_inn, limit, custom_keywords)` — Search completed tenders
 - `extract_keywords_from_title(title)` — Extract keywords from tender title for focused search
 
+#### `source_links.py`
+
+**Functions:**
+- `extract_source_urls(page)` — Extract all external source links (EIS, etc.)
+- `get_source_url(source_urls, source_name)` — Extract specific source URL from string
+- `parse_source_urls(source_urls)` — Parse source string into dictionary
+
 #### `eis_fallback.py`
 
 **Functions:**
@@ -460,7 +468,7 @@ erDiagram
         string tender_id PK
         string customer_inn FK
         string url
-        string eis_url
+        string source_urls
         string title
         float price
         datetime publish_date
@@ -628,6 +636,7 @@ rostender-parse/
 │   │   ├── browser.py        # Playwright browser lifecycle
 │   │   ├── active_tenders.py # Search & parse active tenders
 │   │   ├── historical_search.py  # Search completed tenders by INN
+│   │   ├── source_links.py   # Extract external source URLs
 │   │   └── eis_fallback.py   # Fallback to zakupki.gov.ru
 │   │
 │   ├── parser/
@@ -671,10 +680,13 @@ rostender-parse/
     ├── test_main.py                   # Tests for main.py (CLI parsing, run dispatcher, _configure_logging, _ensure_dirs, main)
     ├── test_params.py                 # Tests for PipelineParams dataclass + factory
     ├── test_parser.py                 # Tests for participant_patterns.py
-    ├── test_pdf_parser.py             # Tests for parser/pdf_parser.py (is_scan_pdf + main fn)
-    ├── test_report_stage.py           # Tests for stages/report.py orchestration
-    ├── test_repository.py             # Tests for repository.py (all CRUD + get_connection, init_db)
-    └── test_search_active_stage.py    # Tests for stages/search_active.py orchestration
+     ├── test_pdf_parser.py             # Tests for parser/pdf_parser.py (is_scan_pdf + main fn)
+     ├── test_report_stage.py           # Tests for stages/report.py orchestration
+     ├── test_repository.py             # Tests for repository.py (all CRUD + get_connection, init_db)
+     ├── test_search_active_stage.py    # Tests for stages/search_active.py orchestration
+     └── test_source_links.py           # Tests for source_links.py
+
+
 ```
 
 ## Dependencies

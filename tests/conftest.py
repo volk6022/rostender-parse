@@ -139,7 +139,7 @@ async def test_db() -> AsyncGenerator[aiosqlite.Connection, None]:
         tender_id TEXT PRIMARY KEY,
         customer_inn TEXT NOT NULL,
         url TEXT,
-        eis_url TEXT,
+        source_urls TEXT,
         title TEXT,
         price REAL,
         publish_date DATETIME,
@@ -147,6 +147,7 @@ async def test_db() -> AsyncGenerator[aiosqlite.Connection, None]:
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(customer_inn) REFERENCES customers(inn)
     );
+
 
     CREATE TABLE IF NOT EXISTS protocol_analysis (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

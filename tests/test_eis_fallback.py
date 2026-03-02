@@ -567,7 +567,7 @@ class TestFallbackExtractInn:
 
             result = await fallback_extract_inn(page, "https://rostender.info/t/1")
 
-        assert result == "1112223334"
+        assert result == ("1112223334", "eis:https://zakupki.gov.ru/order/123")
         mock_extract.assert_called_once_with(page, "https://zakupki.gov.ru/order/123")
 
     @pytest.mark.asyncio
@@ -584,7 +584,7 @@ class TestFallbackExtractInn:
 
             result = await fallback_extract_inn(page, "https://rostender.info/t/1")
 
-        assert result is None
+        assert result == (None, None)
 
     @pytest.mark.asyncio
     async def test_eis_link_with_no_href_returns_none(self) -> None:
@@ -604,7 +604,7 @@ class TestFallbackExtractInn:
 
             result = await fallback_extract_inn(page, "https://rostender.info/t/1")
 
-        assert result is None
+        assert result == (None, None)
 
 
 # ── Tests for fallback_get_protocol ──────────────────────────────────────────
