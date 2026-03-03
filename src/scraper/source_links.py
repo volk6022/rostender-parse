@@ -17,12 +17,17 @@ async def extract_source_urls(page: Page) -> str | None:
     Возвращает строку вида 'eis:https://...,gpb:https://...' или None.
     """
     try:
-        # Ищем все ссылки на странице
-        links = await page.query_selector_all("a[href]")
+        # Извлекаем все href'ы атомарно через JS, чтобы избежать Stale Element Reference
+        # при возможном force-reload страницы.
+        hrefs = await page.evaluate(
+            "() => Array.from(document.querySelectorAll('a[href]')).map(a => a.getAttribute('href'))"
+        )
+        if not hrefs:
+            return None
+
         found_sources: dict[str, str] = {}
 
-        for link in links:
-            href = await link.get_attribute("href")
+        for href in hrefs:
             if not href:
                 continue
 
@@ -39,6 +44,12 @@ async def extract_source_urls(page: Page) -> str | None:
         return ",".join(f"{name}:{url}" for name, url in found_sources.items())
 
     except Exception as e:
+        if "Execution context was destroyed" in str(e):
+            # Проглатываем ошибку контекста, т.к. при перегрузке страницы
+            # мы можем либо попробовать еще раз (в вызывающем коде),
+            # либо просто вернуть None.
+            logger.debug(f"Контекст уничтожен при извлечении ссылок: {e}")
+            return None
         logger.error(f"Ошибка при извлечении ссылок на источники: {e}")
         return None
 

@@ -1,5 +1,6 @@
 """Модуль для поиска активных тендеров на rostender.info."""
 
+import asyncio
 import re
 from datetime import datetime
 from typing import Any
@@ -14,6 +15,7 @@ from src.config import (
     SELECTORS,
 )
 from src.scraper.source_links import extract_source_urls
+from src.scraper.common import submit_search
 from src.scraper.browser import BASE_URL, polite_wait, safe_goto
 
 # Короткий алиас для читаемости.
@@ -28,6 +30,14 @@ async def _navigate_to_search(page: Page) -> None:
     await safe_goto(page, BASE_URL)
     await polite_wait()
     await safe_goto(page, f"{BASE_URL}/extsearch/advanced")
+    await polite_wait()
+    try:
+        await page.wait_for_selector(
+            "#states_chosen, #states + .chosen-container", timeout=10_000
+        )
+        logger.debug("Chosen-плагин инициализирован")
+    except Exception:
+        logger.debug("Chosen-контейнер не найден за 10 с, продолжаем...")
 
 
 async def _fill_common_filters(
@@ -42,9 +52,12 @@ async def _fill_common_filters(
     """
     # Ключевые слова
     await page.fill(S["search_keywords_input"], ", ".join(keywords))
+    # Маленькая пауза, чтобы input event обработался
+    await page.wait_for_timeout(300)
 
     # Исключения
     await page.fill(S["search_exceptions_input"], ", ".join(EXCLUDE_KEYWORDS))
+    await page.wait_for_timeout(300)
 
     # Цена от: используем скрытое поле напрямую через JS,
     # т.к. disp-поле имеет maskMoney-плагин, который может мешать вводу.
@@ -116,25 +129,23 @@ async def _submit_and_collect(
         log_context: Контекст для лог-сообщений (напр. ``"для ИНН 123"``).
         empty_warning: Сообщение, если на первой странице нет результатов.
     """
-    await page.click(S["search_button"])
-    await page.wait_for_load_state("load")
-    await polite_wait()
+    await submit_search(page, log_context)
 
     all_tenders: list[dict[str, Any]] = []
+
     page_num = 1
 
     while True:
         logger.info("Парсинг страницы #{} {}...", page_num, log_context)
 
-        rows = await page.query_selector_all(S["tender_card"])
-        if not rows:
+        page_tenders = await parse_tenders_on_page(page)
+        if not page_tenders:
             if page_num == 1:
                 logger.warning(empty_warning) if not log_context else logger.info(
                     empty_warning
                 )
             break
 
-        page_tenders = await parse_tenders_on_page(page)
         all_tenders.extend(page_tenders)
         logger.info(
             "Страница {}: найдено {} тендеров (всего: {})",
@@ -143,7 +154,21 @@ async def _submit_and_collect(
             len(all_tenders),
         )
 
-        next_btn = await page.query_selector(S["pagination_next"])
+        # Проверка на наличие следующей страницы
+        next_btn = None
+        for attempt in range(2):
+            try:
+                next_btn = await page.query_selector(S["pagination_next"])
+                break
+            except Exception as e:
+                if "Execution context was destroyed" in str(e) and attempt == 0:
+                    logger.warning(
+                        "Контекст уничтожен при поиске кнопки пагинации, повтор..."
+                    )
+                    await asyncio.sleep(1)
+                    continue
+                raise
+
         if not next_btn:
             logger.debug("Следующей страницы нет — пагинация завершена")
             break
@@ -186,35 +211,45 @@ async def parse_tenders_on_page(
       </article>
     """
     # ── Атомарное извлечение данных из DOM (один JS-вызов) ──────────────
-    try:
-        raw_items: list[dict[str, Any]] = await page.evaluate(
-            """
-            (sel) => {
-                const rows = document.querySelectorAll(sel.card);
-                return Array.from(rows).map(row => {
-                    const id = row.getAttribute('id');
-                    const linkEl = row.querySelector(sel.link)
-                                || row.querySelector(sel.linkAlt);
-                    const priceEl = row.querySelector(sel.price);
-                    return {
-                        tender_id: id || null,
-                        title: linkEl ? linkEl.innerText.trim() : null,
-                        url: linkEl ? linkEl.getAttribute('href') : null,
-                        price_text: priceEl ? priceEl.innerText : '0',
-                    };
-                });
-            }
-            """,
-            {
-                "card": S["tender_card"],
-                "link": S["tender_link"],
-                "linkAlt": S["tender_link_alt"],
-                "price": S["tender_price"],
-            },
-        )
-    except Exception as e:
-        logger.error(f"Ошибка при извлечении карточек через JS: {e}")
-        return []
+    raw_items: list[dict[str, Any]] = []
+    # Повтор при «Execution context was destroyed» (бывает из-за forceReload на сайте).
+    for attempt in range(2):
+        try:
+            raw_items = await page.evaluate(
+                """
+                (sel) => {
+                    const rows = document.querySelectorAll(sel.card);
+                    return Array.from(rows).map(row => {
+                        const id = row.getAttribute('id');
+                        const linkEl = row.querySelector(sel.link)
+                                    || row.querySelector(sel.linkAlt);
+                        const priceEl = row.querySelector(sel.price);
+                        return {
+                            tender_id: id || null,
+                            title: linkEl ? linkEl.innerText.trim() : null,
+                            url: linkEl ? linkEl.getAttribute('href') : null,
+                            price_text: priceEl ? priceEl.innerText : '0',
+                        };
+                    });
+                }
+                """,
+                {
+                    "card": S["tender_card"],
+                    "link": S["tender_link"],
+                    "linkAlt": S["tender_link_alt"],
+                    "price": S["tender_price"],
+                },
+            )
+            break
+        except Exception as e:
+            if "Execution context was destroyed" in str(e) and attempt == 0:
+                logger.warning(
+                    "Контекст уничтожен при парсинге страницы, повтор через 1с..."
+                )
+                await asyncio.sleep(1)
+                continue
+            logger.error(f"Ошибка при извлечении карточек через JS: {e}")
+            return []
 
     if not raw_items:
         return []
@@ -289,9 +324,32 @@ async def search_active_tenders(
     # Дата публикации: из параметров или "сегодня"
     effective_date_from = date_from or datetime.now().strftime("%d.%m.%Y")
     effective_date_to = date_to or datetime.now().strftime("%d.%m.%Y")
-    await page.fill(S["search_date_from"], effective_date_from)
-    await page.fill(S["search_date_to"], effective_date_to)
-    logger.debug("Фильтр дат: {} — {}", effective_date_from, effective_date_to)
+
+    # Используем JS для установки дат и триггера события change,
+    # чтобы обойти возможные маски ввода или datepicker'ы.
+    await page.evaluate(
+        """
+        ([dFrom, dTo, selFrom, selTo]) => {
+            const elFrom = document.querySelector(selFrom);
+            const elTo = document.querySelector(selTo);
+            if (elFrom) {
+                elFrom.value = dFrom;
+                elFrom.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            if (elTo) {
+                elTo.value = dTo;
+                elTo.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
+    """,
+        [
+            effective_date_from,
+            effective_date_to,
+            S["search_date_from"],
+            S["search_date_to"],
+        ],
+    )
+    logger.info("Фильтр дат: {} — {}", effective_date_from, effective_date_to)
 
     all_tenders = await _submit_and_collect(
         page,
@@ -312,23 +370,37 @@ async def extract_inn_from_page(
     await safe_goto(page, tender_url)
     await polite_wait()
 
-    source_urls = await extract_source_urls(page)
+    for attempt in range(2):
+        try:
+            source_urls = await extract_source_urls(page)
 
-    # Поиск ИНН в атрибуте 'inn' кнопки
-    btn = await page.query_selector(S["inn_button"])
-    if btn:
-        inn = await btn.get_attribute("inn")
-        if inn and inn.strip():
-            return inn.strip(), source_urls
+            # Поиск ИНН в атрибуте 'inn' кнопки
+            btn = await page.query_selector(S["inn_button"])
+            if btn:
+                inn = await btn.get_attribute("inn")
+                if inn and inn.strip():
+                    return inn.strip(), source_urls
 
-    # Если в атрибуте нет, ищем в тексте страницы (ИНН: 1234567890)
-    content = await page.content()
-    inn_match = re.search(r"ИНН\s*:?\s*(\d{10,12})", content)
-    if inn_match:
-        return inn_match.group(1), source_urls
+            # Если в атрибуте нет, ищем в тексте страницы (ИНН: 1234567890)
+            content = await page.content()
+            inn_match = re.search(r"ИНН\s*:?\s*(\d{10,12})", content)
+            if inn_match:
+                return inn_match.group(1), source_urls
 
-    logger.warning(f"ИНН не найден для тендера: {tender_url}")
-    return None, source_urls
+            logger.warning(f"ИНН не найден для тендера: {tender_url}")
+            return None, source_urls
+
+        except Exception as e:
+            if "Execution context was destroyed" in str(e) and attempt == 0:
+                logger.warning(
+                    "Контекст уничтожен на странице тендера, повтор через 1с..."
+                )
+                await asyncio.sleep(1)
+                continue
+            logger.error(f"Ошибка при извлечении данных со страницы тендера: {e}")
+            return None, None
+
+    return None, None
 
 
 async def get_customer_name(page: Page) -> str | None:
@@ -386,6 +458,10 @@ async def search_tenders_by_inn(
 
     # ИНН заказчика (специфичное поле, только для этого варианта поиска)
     await page.fill(S["search_customers_input"], inn)
+    await page.keyboard.press("Enter")
+    # Сразу закрываем подсказки
+    await page.keyboard.press("Escape")
+    await page.wait_for_timeout(300)
 
     await _fill_common_filters(page, effective_keywords, min_price)
 

@@ -505,14 +505,16 @@ class TestSearchActiveTenders:
                 date_to="31.01.2025",
             )
 
-        # page.fill called for date_from and date_to
-        fill_calls = [(c.args[0], c.args[1]) for c in page.fill.call_args_list]
-        date_from_calls = [c for c in fill_calls if "date-from" in c[0]]
-        date_to_calls = [c for c in fill_calls if "date-to" in c[0]]
-        assert len(date_from_calls) == 1
-        assert date_from_calls[0][1] == "01.01.2025"
-        assert len(date_to_calls) == 1
-        assert date_to_calls[0][1] == "31.01.2025"
+        # evaluate called for date_from and date_to (among others)
+        date_eval_calls = [
+            c
+            for c in page.evaluate.call_args_list
+            if "elFrom.value = dFrom" in c.args[0]
+        ]
+        assert len(date_eval_calls) == 1
+        script, args = date_eval_calls[0].args
+        assert args[0] == "01.01.2025"
+        assert args[1] == "31.01.2025"
 
 
 # ── Tests for search_tenders_by_inn ──────────────────────────────────────────

@@ -14,6 +14,8 @@ from src.config import (
     HISTORICAL_TENDERS_LIMIT as DEFAULT_HISTORY_LIMIT,
     MAX_PARTICIPANTS_THRESHOLD as DEFAULT_MAX_PARTICIPANTS,
     COMPETITION_RATIO_THRESHOLD as DEFAULT_RATIO_THRESHOLD,
+    SEARCH_DATE_FROM as DEFAULT_DATE_FROM,
+    SEARCH_DATE_TO as DEFAULT_DATE_TO,
     OUTPUT_FORMATS as DEFAULT_OUTPUT_FORMATS,
 )
 
@@ -96,6 +98,9 @@ class PipelineParams:
         """Определить даты поиска на основе аргументов."""
         if args.date_from or args.date_to:
             return args.date_from, args.date_to
+
+        if DEFAULT_DATE_FROM or DEFAULT_DATE_TO:
+            return DEFAULT_DATE_FROM, DEFAULT_DATE_TO
 
         date_to = datetime.now().strftime("%d.%m.%Y")
         date_from = (datetime.now() - timedelta(days=args.days_back)).strftime(

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import re
 from typing import Any
+import asyncio
 
 from loguru import logger
 from playwright.async_api import Page
 
 from src.config import SELECTORS
 from src.scraper.active_tenders import parse_tenders_on_page
+from src.scraper.common import submit_search
 from src.scraper.browser import BASE_URL, polite_wait, safe_goto
 
 # Короткий алиас для читаемости.
@@ -185,10 +187,15 @@ async def search_historical_tenders(
 
     # Заказчик (ИНН)
     await page.fill(S["search_customers_input"], customer_inn)
+    await page.keyboard.press("Enter")
+    # Нажимаем Escape, чтобы закрыть список подсказок, если он появился
+    await page.keyboard.press("Escape")
 
     # Ключевые слова (общие или кастомные из заголовка тендера)
     keywords_str = ", ".join(keywords)
     await page.fill(S["search_keywords_input"], keywords_str)
+    # Даем сайту осознать введенный текст
+    await page.wait_for_timeout(300)
 
     # Цена от: MIN_PRICE_HISTORICAL через JS (maskMoney)
     await page.evaluate(
@@ -237,12 +244,11 @@ async def search_historical_tenders(
     # Даты НЕ устанавливаем — ищем по всей истории.
 
     # ── 3. Нажимаем «Искать» ─────────────────────────────────────────────
-    await page.click(S["search_button"])
-    await page.wait_for_load_state("load")
-    await polite_wait()
+    await submit_search(page, f"ИНН {customer_inn}")
 
     # Логируем URL после поиска для диагностики применённых фильтров
     current_url = page.url
+
     logger.debug("URL после поиска: {}", current_url)
 
     # Ждём появления результатов (карточки тендеров) или пустого списка
