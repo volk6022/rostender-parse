@@ -151,13 +151,15 @@ async def test_db() -> AsyncGenerator[aiosqlite.Connection, None]:
 
     CREATE TABLE IF NOT EXISTS protocol_analysis (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        tender_id TEXT NOT NULL UNIQUE,
+        tender_id TEXT NOT NULL,
+        tender_protocol_index INTEGER,
         participants_count INTEGER,
         parse_source TEXT,
         parse_status TEXT NOT NULL,
         doc_path TEXT,
         notes TEXT,
         analyzed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(tender_id, tender_protocol_index),
         FOREIGN KEY(tender_id) REFERENCES tenders(tender_id)
     );
 

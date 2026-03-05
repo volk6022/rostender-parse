@@ -26,14 +26,16 @@ CREATE TABLE IF NOT EXISTS tenders (
 
 -- Результаты парсинга протоколов
 CREATE TABLE IF NOT EXISTS protocol_analysis (
-    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    tender_id           TEXT NOT NULL UNIQUE,
-    participants_count  INTEGER,          -- NULL = не удалось определить
-    parse_source        TEXT,             -- html | docx | pdf_text | eis_html | eis_docx
-    parse_status        TEXT NOT NULL,    -- success | failed | skipped_scan | no_protocol
-    doc_path            TEXT,             -- Путь к скачанному файлу
-    notes               TEXT,             -- Доп. информация / причина ошибки
-    analyzed_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
+    id                                INTEGER PRIMARY KEY AUTOINCREMENT,
+    tender_id                         TEXT NOT NULL,
+    tender_protocol_index             INTEGER,           -- NULL для де-дуплицированного результата, 1+ для отдельных протоколов
+    participants_count                INTEGER,            -- NULL = не удалось определить
+    parse_source                      TEXT,               -- html | docx | pdf_text |eis_html | eis_docx | deduplicated
+    parse_status                      TEXT NOT NULL,      -- success | failed | skipped_scan | no_protocol | deduplicated
+    doc_path                          TEXT,               -- Путь к скачанному файлу (можно NULL для агрегированного результата)
+    notes                             TEXT,               -- Доп. информация / причина ошибки
+    analyzed_at                       DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(tender_id, tender_protocol_index),            -- Один протокол только на один tender_id
     FOREIGN KEY(tender_id) REFERENCES tenders(tender_id)
 );
 

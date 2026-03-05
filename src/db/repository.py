@@ -182,13 +182,24 @@ async def upsert_protocol_analysis(
     parse_status: str,
     doc_path: str | None = None,
     notes: str | None = None,
+    tender_protocol_index: int | None = None,
 ) -> None:
-    """Вставить или обновить результат парсинга протокола."""
+    """Вставить или обновить результат парсинга протокола.
+
+    Args:
+        tender_id: ID тендера
+        participants_count: Количество участников (None если не определено)
+        parse_source: Источник парсинга (html|docx|pdf_text|deduplicated и т.д.)
+        parse_status: Статус (success|failed|deduplicated и т.д.)
+        doc_path: Путь к скачанному файлу
+        notes: Дополнительные заметки
+        tender_protocol_index: Индекс протокола (NULL для де-дуплицированного результата, 1+ для отдельных протоколов)
+    """
     await conn.execute(
         """
-        INSERT INTO protocol_analysis (tender_id, participants_count, parse_source, parse_status, doc_path, notes)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(tender_id) DO UPDATE SET
+        INSERT INTO protocol_analysis (tender_id, tender_protocol_index, participants_count, parse_source, parse_status, doc_path, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(tender_id, tender_protocol_index) DO UPDATE SET
             participants_count = excluded.participants_count,
             parse_source       = excluded.parse_source,
             parse_status       = excluded.parse_status,
@@ -196,8 +207,41 @@ async def upsert_protocol_analysis(
             notes              = excluded.notes,
             analyzed_at        = CURRENT_TIMESTAMP
         """,
-        (tender_id, participants_count, parse_source, parse_status, doc_path, notes),
+        (
+            tender_id,
+            tender_protocol_index,
+            participants_count,
+            parse_source,
+            parse_status,
+            doc_path,
+            notes,
+        ),
     )
+
+
+async def get_protocol_analyses_for_tender(
+    conn: aiosqlite.Connection,
+    tender_id: str,
+) -> Sequence[Any]:
+    """Получить все протоколы для конкретного tender_id.
+
+    Возвращает все записи protocol_analysis для данного tender_id
+    упорядоченные по tender_protocol_index для последовательного анализа.
+
+    Returns:
+        Список словарей с полями: id, tender_id, tender_protocol_index,
+        doc_path, parse_status, analyzed_at
+    """
+    cursor = await conn.execute(
+        """
+        SELECT id, tender_id, tender_protocol_index, doc_path, parse_status, analyzed_at
+        FROM protocol_analysis 
+        WHERE tender_id = ?
+        ORDER BY tender_protocol_index
+        """,
+        (tender_id,),
+    )
+    return list(await cursor.fetchall())
 
 
 async def get_protocol_analyses_for_customer(
@@ -337,6 +381,57 @@ async def get_latest_protocol_analyses(
         (customer_inn, *tender_ids),
     )
     return list(await cursor.fetchall())
+
+
+async def save_protocol_analysis_result(
+    conn: aiosqlite.Connection,
+    *,
+    tender_id: str,
+    participants_count: int | None,
+    parse_source: str,
+    parse_status: str,
+    doc_path: str | None = None,
+    notes: str | None = None,
+) -> None:
+    """Сохранить итоговый/де-дуплицированный результат для tender_id.
+
+    Де-дуплицированный результат (tender_protocol_index=NULL) перезаписывает
+    предыдущие записи для этого tender_id.
+
+    Если результат уже есть с таким же количеством участников — пропускаем
+    (для избежания дублей в результатах).
+    """
+    # Проверяем, есть ли уже результат с таким же количеством
+    existing = await conn.execute(
+        """
+        SELECT id FROM protocol_analysis 
+        WHERE tender_id = ? 
+          AND (participants_count = ? OR (participants_count IS NULL AND ? IS NULL))
+          AND parse_status = 'deduplicated'
+        """,
+        (tender_id, participants_count, participants_count),
+    )
+    row = await existing.fetchone()
+
+    if row is not None:
+        # Результат уже сохранён — пропускаем
+        logger.debug(
+            "Результат для tender_id {} уже существует (count={}). Пропускаю.",
+            tender_id,
+            participants_count,
+        )
+        return
+
+    await upsert_protocol_analysis(
+        conn,
+        tender_id=tender_id,
+        participants_count=participants_count,
+        parse_source=parse_source,
+        parse_status=parse_status,
+        doc_path=doc_path,
+        notes=notes,
+        tender_protocol_index=None,  # NULL для де-дуплицированного результата
+    )
 
 
 # ── Reports ──────────────────────────────────────────────────────────────────────

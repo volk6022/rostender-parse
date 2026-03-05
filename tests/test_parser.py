@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from src.parser.participant_patterns import (
+    ParticipantParsingResult,
     ParticipantResult,
     extract_participants_from_text,
 )
@@ -152,12 +153,13 @@ class TestExtractParticipantsFromText:
 
 
 class TestParticipantResult:
-    """Tests for ParticipantResult dataclass."""
+    """Tests for ParticipantResult / ParticipantParsingResult dataclass."""
 
     def test_dataclass_fields(self) -> None:
         """Проверка полей дата-класса."""
-        result = ParticipantResult(
+        result = ParticipantParsingResult(
             count=5,
+            numbers=[1, 2, 3, 4, 5],
             method="test_method",
             confidence="high",
         )
@@ -165,13 +167,19 @@ class TestParticipantResult:
         assert result.count == 5
         assert result.method == "test_method"
         assert result.confidence == "high"
+        assert result.numbers == [1, 2, 3, 4, 5]
 
     def test_none_count_allowed(self) -> None:
         """None значение для count допустимо."""
-        result = ParticipantResult(
+        result = ParticipantParsingResult(
             count=None,
+            numbers=[],
             method="no_data",
             confidence="low",
         )
 
         assert result.count is None
+
+    def test_participant_result_alias(self) -> None:
+        """ParticipantResult — алиас для ParticipantParsingResult."""
+        assert ParticipantResult is ParticipantParsingResult
