@@ -28,9 +28,11 @@ from src.db.repository import (
 )
 from src.parser.docx_parser import extract_participants_from_docx
 from src.parser.participant_patterns import (
+    ParticipantParsingResult,
     ParticipantResult,
     extract_participants_from_text,
 )
+from src.parser.table_analyzer import MultiProtocolAnalysis, ProtocolData
 from src.parser.pdf_parser import extract_participants_from_pdf, is_scan_pdf
 from src.scraper.browser import polite_wait, safe_goto
 from src.scraper.eis_fallback import fallback_get_protocol
@@ -293,14 +295,18 @@ def _parse_downloaded_file(file_path: Path) -> tuple[ParticipantResult, str]:
             pass
         logger.info("Файл .doc {} не поддерживается (только .docx)", file_path.name)
         return (
-            ParticipantResult(count=None, method="doc_unsupported", confidence="low"),
+            ParticipantParsingResult(
+                count=None, numbers=[], method="doc_unsupported", confidence="low"
+            ),
             "doc",
         )
 
     elif ext in ("pdf",):
         if is_scan_pdf(file_path):
             return (
-                ParticipantResult(count=None, method="pdf_scan_skip", confidence="low"),
+                ParticipantParsingResult(
+                    count=None, numbers=[], method="pdf_scan_skip", confidence="low"
+                ),
                 "pdf_scan",
             )
         result = extract_participants_from_pdf(file_path)
@@ -309,8 +315,8 @@ def _parse_downloaded_file(file_path: Path) -> tuple[ParticipantResult, str]:
     else:
         logger.warning("Неизвестное расширение протокола: .{}", ext)
         return (
-            ParticipantResult(
-                count=None, method=f"unknown_ext_{ext}", confidence="low"
+            ParticipantParsingResult(
+                count=None, numbers=[], method=f"unknown_ext_{ext}", confidence="low"
             ),
             f"unknown_{ext}",
         )
@@ -505,7 +511,13 @@ async def analyze_tender_protocol(
         [p.extension for p in sorted_protocols],
     )
 
-    # ── 4. Скачивание и парсинг (пробуем по приоритету) ───────────────────
+    # ── 4. Скачивание и парсинг всех протоколов (с дедупликацией) ───────────
+    multi_analysis = MultiProtocolAnalysis(tender_id=tender_id)
+    protocol_index = 0
+    scan_found = False
+    last_doc_path: str | None = None
+    last_parse_source: str | None = None
+
     for protocol in sorted_protocols:
         logger.debug(
             "Пробуем протокол: '{}' (.{})",
@@ -524,6 +536,7 @@ async def analyze_tender_protocol(
         # Если PDF-скан — пропускаем к следующему файлу
         if participant_result.method == "pdf_scan_skip":
             logger.info("Протокол {} — PDF-скан, пробуем следующий", protocol.title)
+            scan_found = True
             continue
 
         # Определяем doc_path для хранения
@@ -531,38 +544,82 @@ async def analyze_tender_protocol(
             str(file_path.relative_to(DOWNLOADS_DIR)) if KEEP_DOWNLOADED_DOCS else None
         )
 
-        # Если нашли количество участников — success
+        protocol_index += 1
+
+        # Добавляем данные протокола в MultiProtocolAnalysis
+        protocol_data = ProtocolData(
+            protocol_index=protocol_index,
+            file_path=doc_path,
+            parse_source=parse_source,
+            application_numbers=participant_result.numbers,
+            raw_count=participant_result.count,
+            parse_method=participant_result.method,
+            confidence=participant_result.confidence,
+        )
+        multi_analysis.add_protocol(protocol_data)
+
         if participant_result.count is not None:
-            result = ProtocolParseResult(
-                tender_id=tender_id,
-                participants_count=participant_result.count,
-                parse_source=parse_source,
-                parse_status="success",
-                doc_path=doc_path,
-                notes=f"method={participant_result.method}, confidence={participant_result.confidence}",
-            )
-            await _save_result(conn, result)
-            logger.success(
-                "Тендер {}: {} участников (источник: {}, метод: {})",
-                tender_id,
+            last_doc_path = doc_path
+            last_parse_source = parse_source
+            logger.debug(
+                "Протокол '{}' (.{}): {} участников (метод: {}, заявки: {})",
+                protocol.title[:50],
+                protocol.extension,
                 participant_result.count,
-                parse_source,
+                participant_result.method,
+                participant_result.numbers,
+            )
+        else:
+            logger.debug(
+                "Протокол '{}' (.{}): участники не определены ({})",
+                protocol.title[:50],
+                protocol.extension,
                 participant_result.method,
             )
-            return result
 
-        # Если не нашли — пробуем следующий протокол
-        logger.debug(
-            "Протокол '{}' (.{}): участники не определены ({}), пробуем следующий",
-            protocol.title[:50],
-            protocol.extension,
-            participant_result.method,
+    # ── 5. Агрегация результатов ──────────────────────────────────────────
+    final_count = multi_analysis.get_final_count()
+
+    if final_count is not None:
+        # Определяем лучший источник для записи
+        best_protocol = next(
+            (p for p in multi_analysis.protocols if p.raw_count is not None),
+            multi_analysis.protocols[0] if multi_analysis.protocols else None,
         )
 
-    # ── 5. Ни один протокол не дал результат ─────────────────────────────
-    # Проверяем, были ли PDF-сканы среди протоколов
-    scan_found = any(p.extension == "pdf" for p in sorted_protocols)
+        if multi_analysis.has_deduplication():
+            # Было несколько протоколов с дедупликацией
+            notes = (
+                f"deduplicated: {multi_analysis.summary_notes()}, "
+                f"confidence={multi_analysis.get_best_confidence()}"
+            )
+            effective_source = "deduplicated"
+        else:
+            notes = (
+                f"method={best_protocol.parse_method if best_protocol else 'unknown'}, "
+                f"confidence={multi_analysis.get_best_confidence()}"
+            )
+            effective_source = last_parse_source or "unknown"
 
+        result = ProtocolParseResult(
+            tender_id=tender_id,
+            participants_count=final_count,
+            parse_source=effective_source,
+            parse_status="success",
+            doc_path=last_doc_path,
+            notes=notes,
+        )
+        await _save_result(conn, result)
+        logger.success(
+            "Тендер {}: {} участников (источник: {}, протоколов: {})",
+            tender_id,
+            final_count,
+            effective_source,
+            len(multi_analysis.protocols),
+        )
+        return result
+
+    # ── 6. Ни один протокол не дал результат ─────────────────────────────
     if scan_found and len(sorted_protocols) == 1:
         parse_status = "skipped_scan"
         notes = "Единственный протокол — PDF-скан (OCR не поддерживается)"
