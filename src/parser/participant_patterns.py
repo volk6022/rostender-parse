@@ -13,10 +13,18 @@ from loguru import logger
 
 
 @dataclass
-class ParticipantResult:
-    """Результат извлечения числа участников."""
+class ParticipantParsingResult:
+    """Результат извлечения числа участников из одного протокола.
+    
+    Новый тип возвращает:
+    - count: Итоговое количество (после де-дупликации)
+    - numbers: Все найденные номера заявок (для меж-протокольной де-дупликации)
+    - method: Описание метода
+    - confidence: high | medium | low
+    """
 
     count: int | None
+    numbers: list[int]  # Все найденные номера заявок (для де-дупликации между протоколами)
     method: str  # Описание способа извлечения
     confidence: str  # high | medium | low
 
@@ -120,7 +128,7 @@ _VOID_TENDER_PATTERN = re.compile(
 )
 
 
-def extract_participants_from_text(text: str) -> ParticipantResult:
+def extract_participants_from_text(text: str) -> ParticipantParsingResult:
     """Извлекает количество участников из текстового содержимого протокола.
 
     Применяет паттерны в порядке убывания надёжности.
@@ -129,7 +137,8 @@ def extract_participants_from_text(text: str) -> ParticipantResult:
         text: Текстовое содержимое протокола (из .docx, .pdf, .txt, .htm).
 
     Returns:
-        ParticipantResult с количеством участников и методом извлечения.
+        ParticipantParsingResult с количеством участников и методом извлечения.
+        Все паттерны возвращают numbers для меж-протокольной де-дупликации.
     """
     if not text or not text.strip():
         return ParticipantResult(count=None, method="empty_text", confidence="low")
@@ -145,36 +154,45 @@ def extract_participants_from_text(text: str) -> ParticipantResult:
                 count,
                 match.group(0)[:80],
             )
-            return ParticipantResult(count=count, method=method, confidence="high")
+            numbers = [count]
+            return ParticipantParsingResult(count=count, numbers=numbers, method=method, confidence="high")
 
     # Группа 6: "Заявок не поступило" → 0 участников
     if _ZERO_APPLICATIONS_PATTERN.search(text):
         logger.debug("Найден паттерн 'заявок не поступило' → 0")
-        return ParticipantResult(count=0, method="zero_applications", confidence="high")
+        return ParticipantParsingResult(count=0, numbers=[], method="zero_applications", confidence="high")
 
     # Группа 5: "Единственная заявка" → 1 участник
     if _SINGLE_PARTICIPANT_PATTERN.search(text):
         logger.debug("Найден паттерн 'единственная заявка' → 1")
-        return ParticipantResult(
-            count=1, method="single_participant", confidence="high"
-        )
+        return ParticipantParsingResult(count=1, numbers=[1], method="single_participant", confidence="high")
 
     # Группа 2: Нумерованные заявки (средняя надёжность)
     numbered_matches = _NUMBERED_APPLICATION_PATTERN.findall(text)
     if numbered_matches:
-        max_num = max(int(n) for n in numbered_matches)
-        logger.debug("Нумерованные заявки: макс. №{}", max_num)
-        return ParticipantResult(
-            count=max_num, method="numbered_applications", confidence="medium"
+        numbers = set(int(n) for n in numbered_matches)  # ДЕ-ДУПЛИКАЦИЯ МЕЖДУ ТЭГОВ
+        sorted_numbers = sorted(numbers)
+        max_num = max(sorted_numbers) if sorted_numbers else 0
+        logger.debug("Нумерованные заявки: найденные номера {}, макс. №{}", sorted_numbers, max_num)
+        return ParticipantParsingResult(
+            count=max_num,
+            numbers=list(sorted_numbers),
+            method="numbered_applications",
+            confidence="medium"
         )
 
     # Группа 3: Нумерованные строки с названиями организаций
     row_matches = _NUMBERED_ROWS_PATTERN.findall(text)
     if row_matches:
-        max_row = max(int(n) for n in row_matches)
-        logger.debug("Нумерованные строки участников: макс. №{}", max_row)
-        return ParticipantResult(
-            count=max_row, method="numbered_org_rows", confidence="medium"
+        numbers = set(int(n) for n in row_matches)  # ДЕ-ДУПЛИКАЦИЯ
+        sorted_numbers = sorted(numbers)
+        max_row = max(sorted_numbers) if sorted_numbers else 0
+        logger.debug("Нумерованные строки участников: найденные номера {}, макс. №{}", sorted_numbers, max_row)
+        return ParticipantParsingResult(
+            count=max_row,
+            numbers=list(sorted_numbers),
+            method="numbered_org_rows",
+            confidence="medium"
         )
 
     # Группа 4: Подсчёт уникальных ИНН
@@ -190,15 +208,13 @@ def extract_participants_from_text(text: str) -> ParticipantResult:
         logger.debug(
             "Уникальные ИНН: {} (за вычетом заказчика: {})", len(unique_inns), count
         )
-        return ParticipantResult(
-            count=count, method="unique_inn_count", confidence="low"
-        )
+        return ParticipantParsingResult(count=count, numbers=[], method="unique_inn_count", confidence="low")
 
     # Группа 7: "Признана несостоявшейся" — 0 или 1 участник
     if _VOID_TENDER_PATTERN.search(text):
         logger.debug("Тендер признан несостоявшимся → предположительно 1 участник")
-        return ParticipantResult(count=1, method="void_tender", confidence="low")
+        return ParticipantParsingResult(count=1, numbers=[1], method="void_tender", confidence="low")
 
     # Ничего не найдено
     logger.debug("Ни один паттерн не сработал")
-    return ParticipantResult(count=None, method="no_pattern_matched", confidence="low")
+    return ParticipantParsingResult(count=None, numbers=[], method="no_pattern_matched", confidence="low")
