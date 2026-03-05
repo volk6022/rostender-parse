@@ -99,11 +99,13 @@ class PipelineParams:
         if args.date_from or args.date_to:
             return args.date_from, args.date_to
 
-        if DEFAULT_DATE_FROM or DEFAULT_DATE_TO:
+        # Check if default dates are explicitly set (not None)
+        if DEFAULT_DATE_FROM is not None or DEFAULT_DATE_TO is not None:
             return DEFAULT_DATE_FROM, DEFAULT_DATE_TO
 
+        # Default to today's date when no dates are explicitly specified
         date_to = datetime.now().strftime("%d.%m.%Y")
-        date_from = (datetime.now() - timedelta(days=args.days_back)).strftime(
-            "%d.%m.%Y"
+        date_from = (
+            date_to  # Use today for both start and end when no range is specified
         )
         return date_from, date_to
