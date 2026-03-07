@@ -84,8 +84,11 @@ def check_accuracy(md_path, db_path):
 
 
 if __name__ == '__main__':
-    md_file = input("Путь к markdown-файлу с правильными ответами: ")
-    db_file = input("Путь к SQLite базе данных: ")
+    # md_file = input("Путь к markdown-файлу с правильными ответами: ")
+    # db_file = input("Путь к SQLite базе данных: ")
+
+    md_file = 'downloads-proccessed.md'
+    db_file = 'data\\rostender.db'
     
     try:
         result = check_accuracy(md_file, db_file)
