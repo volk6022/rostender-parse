@@ -9,6 +9,9 @@ from playwright.async_api import Page
 # Маппинг домен -> имя источника
 SOURCE_DOMAINS: dict[str, str] = {
     "zakupki.gov.ru": "eis",
+    "etpgpb.ru": "gpb",
+    "rosatom.ru": "rosatom",
+    "roseltorg.ru": "roseltorg",
 }
 
 

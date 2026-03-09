@@ -11,11 +11,53 @@ from playwright.async_api import Page
 
 from src.config import SELECTORS
 from src.scraper.active_tenders import parse_tenders_on_page
-from src.scraper.common import submit_search
+from src.scraper.common import (
+    _navigate_to_search,
+    _fill_common_filters,
+    submit_search,
+)
 from src.scraper.browser import BASE_URL, polite_wait, safe_goto
 
 # Короткий алиас для читаемости.
 S = SELECTORS
+
+
+# ── Внутренние хелперы (Historical Specific) ────────────────────────────────
+
+
+async def _fill_historical_filters(
+    page: Page,
+    customer_inn: str,
+    keywords: list[str],
+    min_price: int,
+) -> None:
+    """Заполнить фильтры для поиска завершенных тендеров."""
+    # 1. Заказчик (ИНН) - специфично для поиска по ИНН
+    await page.fill(S["search_customers_input"], customer_inn)
+    await page.keyboard.press("Enter")
+    await page.keyboard.press("Escape")
+
+    # 2. Общие фильтры (Ключевые слова, Цена, Скрывать без цены)
+    # Исключения (EXCLUDE_KEYWORDS) не применяются для истории по ИНН
+    await _fill_common_filters(page, keywords, min_price, exclude_keywords=[])
+
+    # 3. Специфичный фильтр - Этап: Завершён (value="100")
+    selected_value = await page.evaluate(
+        """
+        ([val, sel]) => {
+            const select = document.querySelector(sel);
+            if (!select) return null;
+            Array.from(select.options).forEach(opt => opt.selected = (opt.value == val));
+            if (typeof jQuery !== 'undefined' && jQuery(select).trigger) {
+                jQuery(select).trigger('chosen:updated');
+                jQuery(select).trigger('change');
+            }
+            return select.value;
+        }
+    """,
+        ["100", S["search_states"]],
+    )
+    logger.debug("Фильтр «Этап» установлен: selected_value={}", selected_value)
 
 
 def extract_keywords_from_title(title: str) -> list[str]:
@@ -171,79 +213,11 @@ async def search_historical_tenders(
     # Используем кастомные ключевые слова или общие
     keywords = custom_keywords if custom_keywords else SEARCH_KEYWORDS
 
-    # ── 1. Переход на страницу расширенного поиска ────────────────────────
-    await safe_goto(page, f"{BASE_URL}/extsearch/advanced")
-    # Ждём инициализации jQuery и Chosen-плагина на селектах
-    await polite_wait()
-    try:
-        await page.wait_for_selector(
-            "#states_chosen, #states + .chosen-container", timeout=10_000
-        )
-        logger.debug("Chosen-плагин инициализирован на #states")
-    except Exception:
-        logger.debug("Chosen-контейнер не найден за 10 с, продолжаем...")
+    # ── 1. Навигация и заполнение фильтров ────────────────────────────────
+    await _navigate_to_search(page)
+    await _fill_historical_filters(page, customer_inn, keywords, effective_min_price)
 
-    # ── 2. Заполнение фильтров ───────────────────────────────────────────
-
-    # Заказчик (ИНН)
-    await page.fill(S["search_customers_input"], customer_inn)
-    await page.keyboard.press("Enter")
-    # Нажимаем Escape, чтобы закрыть список подсказок, если он появился
-    await page.keyboard.press("Escape")
-
-    # Ключевые слова (общие или кастомные из заголовка тендера)
-    keywords_str = ", ".join(keywords)
-    await page.fill(S["search_keywords_input"], keywords_str)
-    # Даем сайту осознать введенный текст
-    await page.wait_for_timeout(300)
-
-    # Цена от: MIN_PRICE_HISTORICAL через JS (maskMoney)
-    await page.evaluate(
-        """
-        ([val, selPrice, selDisp]) => {
-            document.querySelector(selPrice).value = val;
-            const disp = document.querySelector(selDisp);
-            if (disp && typeof jQuery !== 'undefined' && jQuery(disp).maskMoney) {
-                jQuery(disp).maskMoney('mask', parseFloat(val));
-            } else {
-                disp.value = val;
-            }
-        }
-    """,
-        [str(effective_min_price), S["search_min_price"], S["search_min_price_disp"]],
-    )
-
-    # Скрывать без цены (checkbox visually hidden, use JS)
-    await page.evaluate(
-        "sel => { const el = document.querySelector(sel); if (el && !el.checked) el.click(); }",
-        S["search_hide_price"],
-    )
-
-    # Этап: Завершён (value="100")
-    # Ждём, что jQuery загружен, устанавливаем значение и обновляем Chosen.
-    # Возвращаем фактическое значение select для верификации.
-    selected_value = await page.evaluate(
-        """
-        ([val, sel]) => {
-            const select = document.querySelector(sel);
-            if (!select) return null;
-            // Сбрасываем все options, затем выбираем нужную
-            Array.from(select.options).forEach(opt => opt.selected = (opt.value == val));
-            // Обновляем Chosen-виджет, если jQuery доступен
-            if (typeof jQuery !== 'undefined' && jQuery(select).trigger) {
-                jQuery(select).trigger('chosen:updated');
-                jQuery(select).trigger('change');
-            }
-            return select.value;
-        }
-    """,
-        ["100", S["search_states"]],
-    )
-    logger.debug("Фильтр «Этап» установлен: selected_value={}", selected_value)
-
-    # Даты НЕ устанавливаем — ищем по всей истории.
-
-    # ── 3. Нажимаем «Искать» ─────────────────────────────────────────────
+    # ── 2. Нажимаем «Искать» ─────────────────────────────────────────────
     await submit_search(page, f"ИНН {customer_inn}")
 
     # Логируем URL после поиска для диагностики применённых фильтров

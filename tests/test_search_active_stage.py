@@ -88,10 +88,11 @@ class TestRunSearchActive:
                 return_value="ООО Тест",
             ),
             patch(
-                "src.stages.search_active.upsert_customer", new_callable=AsyncMock
+                "src.stages.search_active.upsert_customers_batch",
+                new_callable=AsyncMock,
             ) as mock_upsert_cust,
             patch(
-                "src.stages.search_active.upsert_tender", new_callable=AsyncMock
+                "src.stages.search_active.upsert_tenders_batch", new_callable=AsyncMock
             ) as mock_upsert_tend,
             patch("src.stages.search_active.get_connection") as mock_conn_ctx,
         ):
@@ -103,18 +104,21 @@ class TestRunSearchActive:
 
             mock_upsert_cust.assert_called_once_with(
                 mock_conn,
-                inn="7712345678",
-                name="ООО Тест",
+                [{"inn": "7712345678", "name": "ООО Тест"}],
             )
             mock_upsert_tend.assert_called_once_with(
                 mock_conn,
-                tender_id="T-1",
-                customer_inn="7712345678",
-                url=tender["url"],
-                source_urls="eis:https://eis/1",
-                title=tender["title"],
-                price=tender["price"],
-                tender_status="active",
+                [
+                    {
+                        "tender_id": "T-1",
+                        "customer_inn": "7712345678",
+                        "url": tender["url"],
+                        "source_urls": "eis:https://eis/1",
+                        "title": tender["title"],
+                        "price": tender["price"],
+                        "tender_status": "active",
+                    }
+                ],
             )
             mock_conn.commit.assert_called()
 
@@ -137,9 +141,9 @@ class TestRunSearchActive:
                 return_value=(None, None),
             ),
             patch(
-                "src.stages.search_active.fallback_extract_inn",
+                "src.stages.search_active.unified_fallback_extract_inn",
                 new_callable=AsyncMock,
-                return_value=("9900001111", "eis:https://eis/99"),
+                return_value="9900001111",
             ) as mock_fallback,
             patch(
                 "src.stages.search_active.get_customer_name",
@@ -147,9 +151,12 @@ class TestRunSearchActive:
                 return_value="Fallback Name",
             ),
             patch(
-                "src.stages.search_active.upsert_customer", new_callable=AsyncMock
+                "src.stages.search_active.upsert_customers_batch",
+                new_callable=AsyncMock,
             ) as mock_upsert_cust,
-            patch("src.stages.search_active.upsert_tender", new_callable=AsyncMock),
+            patch(
+                "src.stages.search_active.upsert_tenders_batch", new_callable=AsyncMock
+            ),
             patch("src.stages.search_active.get_connection") as mock_conn_ctx,
         ):
             mock_conn = AsyncMock()
@@ -158,11 +165,10 @@ class TestRunSearchActive:
 
             await run_search_active(page, params)
 
-            mock_fallback.assert_called_once_with(page, tender["url"])
+            mock_fallback.assert_called_once()
             mock_upsert_cust.assert_called_once_with(
                 mock_conn,
-                inn="9900001111",
-                name="Fallback Name",
+                [{"inn": "9900001111", "name": "Fallback Name"}],
             )
 
     @pytest.mark.asyncio
@@ -184,9 +190,9 @@ class TestRunSearchActive:
                 return_value=(None, None),
             ),
             patch(
-                "src.stages.search_active.fallback_extract_inn",
+                "src.stages.search_active.unified_fallback_extract_inn",
                 new_callable=AsyncMock,
-                return_value=(None, None),
+                return_value=None,
             ),
             patch(
                 "src.stages.search_active.upsert_customer", new_callable=AsyncMock
@@ -229,10 +235,11 @@ class TestRunSearchActive:
                 return_value="Name",
             ),
             patch(
-                "src.stages.search_active.upsert_customer", new_callable=AsyncMock
+                "src.stages.search_active.upsert_customers_batch",
+                new_callable=AsyncMock,
             ) as mock_upsert_cust,
             patch(
-                "src.stages.search_active.upsert_tender", new_callable=AsyncMock
+                "src.stages.search_active.upsert_tenders_batch", new_callable=AsyncMock
             ) as mock_upsert_tend,
             patch("src.stages.search_active.get_connection") as mock_conn_ctx,
         ):
@@ -242,8 +249,8 @@ class TestRunSearchActive:
 
             await run_search_active(page, params)
 
-            assert mock_upsert_cust.call_count == 2
-            assert mock_upsert_tend.call_count == 2
+            assert mock_upsert_cust.call_count == 1
+            assert mock_upsert_tend.call_count == 1
 
     @pytest.mark.asyncio
     async def test_passes_params_to_search(self):

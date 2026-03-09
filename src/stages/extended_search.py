@@ -16,6 +16,7 @@ from src.db.repository import (
 from src.scraper.active_tenders import search_tenders_by_inn
 from src.stages._history_helpers import analyze_tender_history
 from src.stages.params import PipelineParams
+from src.utils.monitoring import StageStats, timed_operation
 
 
 async def run_extended_search(page: Page, params: PipelineParams) -> None:
@@ -30,6 +31,7 @@ async def run_extended_search(page: Page, params: PipelineParams) -> None:
     Зависимости данных: требует results с is_interesting=True (Этап 2).
     """
     logger.info("Этап 3: Расширенный поиск по интересным заказчикам")
+    stats = StageStats("Этап 3 (Расширенный поиск)")
 
     async with get_connection() as conn:
         interesting_customers = await get_interesting_customers(conn)
@@ -48,20 +50,23 @@ async def run_extended_search(page: Page, params: PipelineParams) -> None:
 
         # 3.1 Найти ВСЕ активные тендеры заказчика (цена >= min_price_related)
         try:
-            extended_tenders = await search_tenders_by_inn(
-                page,
-                inn,
-                keywords=params.keywords,
-                min_price=params.min_price_related,
-            )
+            with timed_operation(f"Поиск тендеров ИНН {inn}"):
+                extended_tenders = await search_tenders_by_inn(
+                    page,
+                    inn,
+                    keywords=params.keywords,
+                    min_price=params.min_price_related,
+                )
         except Exception as search_err:
             logger.error(f"Ошибка поиска тендеров для ИНН {inn}: {search_err}")
+            stats.add(success=False)
             continue
 
         if not extended_tenders:
             logger.info(
                 f"Для ИНН {inn} новых тендеров >= {params.min_price_related} не найдено"
             )
+            stats.add(success=True)
             continue
 
         logger.info(f"Найдено {len(extended_tenders)} новых тендеров для ИНН {inn}")
@@ -71,6 +76,7 @@ async def run_extended_search(page: Page, params: PipelineParams) -> None:
             await update_customer_status(conn, inn, "extended_processing")
             await conn.commit()
 
+            customer_success = True
             for t_data in extended_tenders:
                 # Проверяем, не обрабатывали ли мы уже этот тендер
                 if await tender_exists(conn, t_data["tender_id"]):
@@ -87,19 +93,19 @@ async def run_extended_search(page: Page, params: PipelineParams) -> None:
 
                 # 3.2 Сохраняем новый активный тендер
                 logger.info(f"Обработка нового тендера {t_data['tender_id']}...")
-                await upsert_tender(
-                    conn,
-                    tender_id=t_data["tender_id"],
-                    customer_inn=inn,
-                    url=t_data["url"],
-                    title=t_data["title"],
-                    price=t_data["price"],
-                    tender_status="active",
-                )
-                await conn.commit()
-
-                # 3.3 Анализ истории для нового тендера
                 try:
+                    await upsert_tender(
+                        conn,
+                        tender_id=t_data["tender_id"],
+                        customer_inn=inn,
+                        url=t_data["url"],
+                        title=t_data["title"],
+                        price=t_data["price"],
+                        tender_status="active",
+                    )
+                    await conn.commit()
+
+                    # 3.3 Анализ истории для нового тендера
                     await analyze_tender_history(
                         page,
                         conn,
@@ -114,9 +120,12 @@ async def run_extended_search(page: Page, params: PipelineParams) -> None:
                         f"Ошибка при расширенном анализе тендера "
                         f"{t_data['tender_id']}: {exc}"
                     )
+                    customer_success = False
 
             # Обновляем статус заказчика после завершения
             await update_customer_status(conn, inn, "extended_analyzed")
             await conn.commit()
+            stats.add(success=customer_success)
 
+    stats.log_final()
     logger.info("Этап 3: Расширенный поиск завершён")

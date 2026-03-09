@@ -73,6 +73,28 @@ _cfg = _load_config()
 ROSTENDER_LOGIN: str = _cfg.get("rostender_login", "")
 ROSTENDER_PASSWORD: str = _cfg.get("rostender_password", "")
 
+# ── Учетные данные внешних площадок (EIS, GPB, Rosatom, Roseltorg) ──────────
+CREDENTIALS: dict[str, dict[str, str]] = _cfg.get("credentials", {})
+
+
+def get_credentials(platform_name: str) -> dict[str, str] | None:
+    """Возвращает учетные данные для указанной платформы.
+
+    Args:
+        platform_name: Название платформы (eis, gpb, rosatom, roseltorg).
+
+    Returns:
+        Словарь {'login', 'password'} или None.
+    """
+    creds = CREDENTIALS.get(platform_name.lower())
+    if not creds:
+        return None
+    login = creds.get("login")
+    password = creds.get("password")
+    if not login or not password:
+        return None
+    return {"login": login, "password": password}
+
 
 def validate_config() -> None:
     """Проверить, что обязательные поля конфигурации заполнены.

@@ -75,17 +75,13 @@ async def create_page(
         await context.close()
 
 
-async def safe_goto(page: Page, url: str, retries: int = 3) -> None:
+async def safe_goto(page: Page, url: str, retries: int = 4) -> None:
     """Переход по URL с ожиданием загрузки и повторными попытками.
 
     Стратегия:
       1. ``domcontentloaded`` (30 с) — быстрая и надёжная.
-      2. При ошибке — сброс страницы (``about:blank``), пауза, повтор.
-      3. На последней попытке — ``commit`` (минимальное ожидание).
-
-    ``networkidle`` **не** используется: rostender.info часто имеет
-    фоновые запросы (аналитика, websocket), из-за которых ``networkidle``
-    зависает навсегда.
+      2. При ошибке — сброс страницы (``_recover_page``), пауза, повтор.
+      3. **Exponential Backoff**: Задержка 2с, 4с, 8с, 16с.
     """
     last_error = None
     for attempt in range(retries):
@@ -100,15 +96,22 @@ async def safe_goto(page: Page, url: str, retries: int = 3) -> None:
             )
             if attempt < retries - 1:
                 # Сбрасываем страницу, чтобы следующий goto начинался «с чистого листа»
-                try:
-                    await page.goto("about:blank", timeout=5_000)
-                except Exception:
-                    pass
-                delay = 3 * (attempt + 1)  # 3 с, 6 с
+                await _recover_page(page)
+                # Exponential backoff: 2, 4, 8, 16...
+                delay = 2 ** (attempt + 1)
                 logger.debug("Повтор через {} сек...", delay)
                 await asyncio.sleep(delay)
             continue
     raise last_error if last_error else Exception(f"Failed to navigate to {url}")
+
+
+async def _recover_page(page: Page) -> None:
+    """Сброс страницы в исходное состояние (about:blank) при ошибках."""
+    try:
+        logger.debug("Сброс страницы (about:blank)...")
+        await page.goto("about:blank", timeout=5_000)
+    except Exception as e:
+        logger.warning("Не удалось сбросить страницу: {}", e)
 
 
 async def polite_wait() -> None:

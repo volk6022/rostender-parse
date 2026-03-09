@@ -96,20 +96,24 @@ async def analyze_tender_history(
         f"Найдено {len(historical)} завершённых тендеров для {active_tender_id}"
     )
 
-    # 3. Сохраняем завершённые тендеры в БД
-    historical_ids: list[str] = []
-    for t_data in historical:
-        await upsert_tender(
-            conn,
-            tender_id=t_data["tender_id"],
-            customer_inn=customer_inn,
-            url=t_data["url"],
-            title=t_data["title"],
-            price=t_data["price"],
-            tender_status="completed",
-        )
-        historical_ids.append(t_data["tender_id"])
+    # 3. Сохраняем завершённые тендеры в БД (Batch)
+    from src.db.repository import upsert_tenders_batch
+
+    tenders_to_batch = [
+        {
+            "tender_id": t_data["tender_id"],
+            "customer_inn": customer_inn,
+            "url": t_data["url"],
+            "title": t_data["title"],
+            "price": t_data["price"],
+            "tender_status": "completed",
+        }
+        for t_data in historical
+    ]
+    await upsert_tenders_batch(conn, tenders_to_batch)
     await conn.commit()
+
+    historical_ids = [t["tender_id"] for t in tenders_to_batch]
 
     # 4. Парсинг протоколов
     success_count = 0

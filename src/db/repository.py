@@ -14,23 +14,24 @@ from src.db.schema import SCHEMA_SQL
 
 
 @asynccontextmanager
-async def get_connection() -> AsyncGenerator[aiosqlite.Connection, None]:
+async def get_connection(
+    existing_conn: aiosqlite.Connection | None = None,
+) -> AsyncGenerator[aiosqlite.Connection, None]:
     """Открыть соединение с БД (async context manager).
 
-    Usage::
-
-        async with get_connection() as conn:
-            await conn.execute(...)
+    Если передан existing_conn, использует его и не закрывает.
+    В противном случае открывает новое соединение и закрывает его по завершении.
     """
+    if existing_conn:
+        yield existing_conn
+        return
+
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    conn = await aiosqlite.connect(DB_PATH)
-    conn.row_factory = aiosqlite.Row
-    await conn.execute("PRAGMA journal_mode=WAL")
-    await conn.execute("PRAGMA foreign_keys=ON")
-    try:
+    async with aiosqlite.connect(DB_PATH) as conn:
+        conn.row_factory = aiosqlite.Row
+        await conn.execute("PRAGMA journal_mode=WAL")
+        await conn.execute("PRAGMA foreign_keys=ON")
         yield conn
-    finally:
-        await conn.close()
 
 
 async def init_db() -> None:
@@ -50,14 +51,27 @@ async def upsert_customer(
     name: str | None = None,
 ) -> None:
     """Вставить или обновить заказчика."""
-    await conn.execute(
+    await upsert_customers_batch(conn, [{"inn": inn, "name": name}])
+
+
+async def upsert_customers_batch(
+    conn: aiosqlite.Connection,
+    customers: list[dict[str, Any]],
+) -> None:
+    """Вставить или обновить список заказчиков (batch)."""
+    if not customers:
+        return
+
+    values = [(c["inn"], c.get("name")) for c in customers]
+
+    await conn.executemany(
         """
         INSERT INTO customers (inn, name)
         VALUES (?, ?)
         ON CONFLICT(inn) DO UPDATE SET
             name = COALESCE(excluded.name, customers.name)
         """,
-        (inn, name),
+        values,
     )
 
 
@@ -101,7 +115,46 @@ async def upsert_tender(
     tender_status: str,
 ) -> None:
     """Вставить или обновить тендер."""
-    await conn.execute(
+    await upsert_tenders_batch(
+        conn,
+        [
+            {
+                "tender_id": tender_id,
+                "customer_inn": customer_inn,
+                "url": url,
+                "source_urls": source_urls,
+                "title": title,
+                "price": price,
+                "publish_date": publish_date,
+                "tender_status": tender_status,
+            }
+        ],
+    )
+
+
+async def upsert_tenders_batch(
+    conn: aiosqlite.Connection,
+    tenders: list[dict[str, Any]],
+) -> None:
+    """Вставить или обновить список тендеров (batch)."""
+    if not tenders:
+        return
+
+    values = [
+        (
+            t["tender_id"],
+            t["customer_inn"],
+            t.get("url"),
+            t.get("source_urls"),
+            t.get("title"),
+            t.get("price"),
+            t.get("publish_date"),
+            t["tender_status"],
+        )
+        for t in tenders
+    ]
+
+    await conn.executemany(
         """
         INSERT INTO tenders (tender_id, customer_inn, url, source_urls, title, price, publish_date, tender_status)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -113,16 +166,7 @@ async def upsert_tender(
             publish_date  = COALESCE(excluded.publish_date, tenders.publish_date),
             tender_status = excluded.tender_status
         """,
-        (
-            tender_id,
-            customer_inn,
-            url,
-            source_urls,
-            title,
-            price,
-            publish_date,
-            tender_status,
-        ),
+        values,
     )
 
 

@@ -15,82 +15,46 @@ from src.config import (
     SELECTORS,
 )
 from src.scraper.source_links import extract_source_urls
-from src.scraper.common import submit_search
+from src.scraper.common import (
+    _navigate_to_search,
+    _fill_common_filters,
+    submit_search,
+)
 from src.scraper.browser import BASE_URL, polite_wait, safe_goto
 
 # Короткий алиас для читаемости.
 S = SELECTORS
 
 
-# ── Внутренние хелперы (DRY) ─────────────────────────────────────────────────
+# ── Внутренние хелперы (Active Tenders Specific) ──────────────────────────────
 
 
-async def _navigate_to_search(page: Page) -> None:
-    """Перейти на главную → расширенный поиск (установить сессию + куки)."""
-    await safe_goto(page, BASE_URL)
-    await polite_wait()
-    await safe_goto(page, f"{BASE_URL}/extsearch/advanced")
-    await polite_wait()
-    try:
-        await page.wait_for_selector(
-            "#states_chosen, #states + .chosen-container", timeout=10_000
-        )
-        logger.debug("Chosen-плагин инициализирован")
-    except Exception:
-        logger.debug("Chosen-контейнер не найден за 10 с, продолжаем...")
-
-
-async def _fill_common_filters(
+async def _fill_active_filters(
     page: Page,
     keywords: list[str],
     min_price: int,
 ) -> None:
-    """Заполнить общие фильтры формы расширенного поиска.
+    """Заполнить общие и специфичные фильтры для активных тендеров.
 
     Включает: ключевые слова, исключения, мин. цену, скрытие без цены,
     этап «Прием заявок», исключение аукционов и ед. поставщика.
     """
-    # Ключевые слова
-    await page.fill(S["search_keywords_input"], ", ".join(keywords))
-    # Маленькая пауза, чтобы input event обработался
-    await page.wait_for_timeout(300)
+    # 1. Заполняем общие фильтры
+    await _fill_common_filters(page, keywords, min_price)
 
-    # Исключения
-    await page.fill(S["search_exceptions_input"], ", ".join(EXCLUDE_KEYWORDS))
-    await page.wait_for_timeout(300)
-
-    # Цена от: используем скрытое поле напрямую через JS,
-    # т.к. disp-поле имеет maskMoney-плагин, который может мешать вводу.
-    await page.evaluate(
-        """
-        ([val, selPrice, selDisp]) => {
-            document.querySelector(selPrice).value = val;
-            const disp = document.querySelector(selDisp);
-            if (disp && typeof jQuery !== 'undefined' && jQuery(disp).maskMoney) {
-                jQuery(disp).maskMoney('mask', parseFloat(val));
-            } else {
-                disp.value = val;
-            }
-        }
-    """,
-        [str(min_price), S["search_min_price"], S["search_min_price_disp"]],
-    )
-
-    # Скрывать без цены (checkbox visually hidden, use JS)
-    await page.evaluate(
-        "sel => { const el = document.querySelector(sel); if (el && !el.checked) el.click(); }",
-        S["search_hide_price"],
-    )
-
+    # 2. Специфичные для активных тендеров фильтры
     # Этап: Прием заявок (значение "10").
     # Используем jQuery + Chosen plugin.
     await page.evaluate(
         """
         ([val, sel]) => {
             const select = document.querySelector(sel);
+            if (!select) return;
             Array.from(select.options).forEach(opt => opt.selected = (opt.value == val));
-            $(select).trigger('chosen:updated');
-            $(select).trigger('change');
+            if (typeof jQuery !== 'undefined' && jQuery(select).trigger) {
+                jQuery(select).trigger('chosen:updated');
+                jQuery(select).trigger('change');
+            }
         }
     """,
         ["10", S["search_states"]],
@@ -101,6 +65,7 @@ async def _fill_common_filters(
         """
         ([exclude_vals, sel]) => {
             const select = document.querySelector(sel);
+            if (!select) return;
             Array.from(select.options).forEach(opt => {
                 if (exclude_vals.includes(opt.value)) {
                     opt.selected = false;
@@ -108,8 +73,10 @@ async def _fill_common_filters(
                     opt.selected = true;
                 }
             });
-            $(select).trigger('chosen:updated');
-            $(select).trigger('change');
+            if (typeof jQuery !== 'undefined' && jQuery(select).trigger) {
+                jQuery(select).trigger('chosen:updated');
+                jQuery(select).trigger('change');
+            }
         }
     """,
         [["1", "28"], S["search_placement_ways"]],
@@ -319,7 +286,7 @@ async def search_active_tenders(
     effective_keywords = keywords if keywords is not None else SEARCH_KEYWORDS
 
     await _navigate_to_search(page)
-    await _fill_common_filters(page, effective_keywords, min_price)
+    await _fill_active_filters(page, effective_keywords, min_price)
 
     # Дата публикации: из параметров или "сегодня"
     effective_date_from = date_from or datetime.now().strftime("%d.%m.%Y")
@@ -372,23 +339,55 @@ async def extract_inn_from_page(
 
     for attempt in range(2):
         try:
-            source_urls = await extract_source_urls(page)
+            # Атомарное извлечение ИНН и внешних ссылок через JS
+            data = await page.evaluate(
+                """
+                (sel) => {
+                    let inn = null;
+                    const btn = document.querySelector(sel.inn_button);
+                    if (btn) {
+                        inn = btn.getAttribute('inn');
+                    }
+                    if (!inn || !inn.trim()) {
+                        const bodyText = document.body.innerText;
+                        const match = bodyText.match(/ИНН\\s*:?\\s*(\\d{10,12})/);
+                        if (match) inn = match[1];
+                    }
+                    
+                    const hrefs = Array.from(document.querySelectorAll('a[href]'))
+                                       .map(a => a.getAttribute('href'));
+                    
+                    return { inn: inn ? inn.trim() : null, hrefs: hrefs };
+                }
+                """,
+                {"inn_button": S["inn_button"]},
+            )
 
-            # Поиск ИНН в атрибуте 'inn' кнопки
-            btn = await page.query_selector(S["inn_button"])
-            if btn:
-                inn = await btn.get_attribute("inn")
-                if inn and inn.strip():
-                    return inn.strip(), source_urls
+            inn = data["inn"]
+            hrefs = data["hrefs"]
 
-            # Если в атрибуте нет, ищем в тексте страницы (ИНН: 1234567890)
-            content = await page.content()
-            inn_match = re.search(r"ИНН\s*:?\s*(\d{10,12})", content)
-            if inn_match:
-                return inn_match.group(1), source_urls
+            # Обработка ссылок (логика из source_links.py, но адаптированная)
+            from src.scraper.source_links import SOURCE_DOMAINS
 
-            logger.warning(f"ИНН не найден для тендера: {tender_url}")
-            return None, source_urls
+            found_sources: dict[str, str] = {}
+            if hrefs:
+                for href in hrefs:
+                    if not href:
+                        continue
+                    for domain, source_name in SOURCE_DOMAINS.items():
+                        if domain in href and source_name not in found_sources:
+                            found_sources[source_name] = href
+
+            source_urls = (
+                ",".join(f"{name}:{url}" for name, url in found_sources.items())
+                if found_sources
+                else None
+            )
+
+            if not inn:
+                logger.warning(f"ИНН не найден для тендера: {tender_url}")
+
+            return inn, source_urls
 
         except Exception as e:
             if "Execution context was destroyed" in str(e) and attempt == 0:
@@ -405,28 +404,40 @@ async def extract_inn_from_page(
 
 async def get_customer_name(page: Page) -> str | None:
     """
-    Извлекает название организации со страницы тендера.
-    Вызывать после перехода на страницу тендера (extract_inn_from_page).
+    Извлекает название организации со страницы тендера через JS.
     """
-    content = await page.content()
+    try:
+        name = await page.evaluate(
+            """
+            () => {
+                const bodyText = document.body.innerText;
+                // Ищем типичные формы названий организаций в кавычках
+                const re1 = /(?:ООО|OAO|АО|пAO|ЗАО|MКУ|MБУ|ГБУ|ФГУП|ФГБУ|MУП|ГУП|ГБУЗ|BУ)\\s+"[^"]+"/;
+                const match1 = bodyText.match(re1);
+                if (match1) return match1[0];
 
-    # Ищем типичные формы названий организаций в кавычках
-    name_match = re.search(
-        r'(?:ООО|OAO.АО|пAO|ЗАО|MКУ|MБУ|ГБУ|ФГУП|ФГБУ|MУП|ГУП|ГБУЗ|BУ)\s+"[^"]+"',
-        content,
-    )
-    if name_match:
-        return name_match.group(0)
+                // Альтернативный поиск по селекторам или текстовым блокам
+                // В реальной жизни тут можно добавить специфичные селекторы
+                return null;
+            }
+            """
+        )
+        if name:
+            return name
 
-    # Альтернативный поиск: блок с заголовком "Организатор" или "Заказчик"
-    name_match = re.search(
-        r"(?:Организатор|Заказчик)[^<]*?<[^>]*>([^<]{5,100})</[^>]*>",
-        content,
-    )
-    if name_match:
-        return name_match.group(1).strip()
+        # Fallback на Python regex если JS не справился (для сложных случаев)
+        content = await page.content()
+        name_match = re.search(
+            r"(?:Организатор|Заказчик)[^<]*?<[^>]*>([^<]{5,100})</[^>]*>",
+            content,
+        )
+        if name_match:
+            return name_match.group(1).strip()
 
-    return None
+        return None
+    except Exception as e:
+        logger.error(f"Ошибка при извлечении названия заказчика: {e}")
+        return None
 
 
 async def search_tenders_by_inn(
@@ -463,7 +474,7 @@ async def search_tenders_by_inn(
     await page.keyboard.press("Escape")
     await page.wait_for_timeout(300)
 
-    await _fill_common_filters(page, effective_keywords, min_price)
+    await _fill_active_filters(page, effective_keywords, min_price)
 
     all_tenders = await _submit_and_collect(
         page,

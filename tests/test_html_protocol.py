@@ -565,12 +565,12 @@ class TestDownloadProtocol:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-class TestTryEisProtocol:
-    """Tests for _try_eis_protocol() async function."""
+class TestTryExternalFallbacks:
+    """Tests for _try_external_fallbacks() async function."""
 
     @pytest.mark.asyncio
-    async def test_protocol_not_found_on_eis(self) -> None:
-        """When fallback_get_protocol returns None → no_protocol status."""
+    async def test_protocol_not_found_on_any_source(self) -> None:
+        """When no source provides a protocol → None."""
         page = AsyncMock()
         conn = AsyncMock()
 
@@ -585,18 +585,17 @@ class TestTryEisProtocol:
                 new_callable=AsyncMock,
             ),
         ):
-            from src.parser.html_protocol import _try_eis_protocol
+            from src.parser.html_protocol import _try_external_fallbacks
 
-            result = await _try_eis_protocol(
-                page, "https://eis/tender", "T-1", "inn123", conn
+            result = await _try_external_fallbacks(
+                page, "eis:https://eis/tender", "T-1", "inn123", conn
             )
 
-        assert result.parse_status == "no_protocol"
-        assert result.parse_source == "eis_not_found"
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_protocol_found_and_parsed_successfully(self, tmp_path: Path) -> None:
-        """When EIS protocol is found and parsed → success."""
+        """When external protocol is found and parsed → success."""
         page = AsyncMock()
         conn = AsyncMock()
 
@@ -616,10 +615,10 @@ class TestTryEisProtocol:
             patch("src.parser.html_protocol.DOWNLOADS_DIR", tmp_path),
             patch("src.parser.html_protocol.KEEP_DOWNLOADED_DOCS", True),
         ):
-            from src.parser.html_protocol import _try_eis_protocol
+            from src.parser.html_protocol import _try_external_fallbacks
 
-            result = await _try_eis_protocol(
-                page, "https://eis/tender", "T-1", "inn123", conn
+            result = await _try_external_fallbacks(
+                page, "eis:https://eis/tender", "T-1", "inn123", conn
             )
 
         assert result.parse_status == "success"
@@ -628,7 +627,7 @@ class TestTryEisProtocol:
 
     @pytest.mark.asyncio
     async def test_protocol_found_but_parse_fails(self, tmp_path: Path) -> None:
-        """When EIS protocol is found but parsing yields no count → failed."""
+        """When external protocol is found but parsing yields no count → continues or fails."""
         page = AsyncMock()
         conn = AsyncMock()
 
@@ -647,40 +646,13 @@ class TestTryEisProtocol:
             ),
             patch("src.parser.html_protocol.DOWNLOADS_DIR", tmp_path),
         ):
-            from src.parser.html_protocol import _try_eis_protocol
+            from src.parser.html_protocol import _try_external_fallbacks
 
-            result = await _try_eis_protocol(
-                page, "https://eis/tender", "T-1", "inn123", conn
+            result = await _try_external_fallbacks(
+                page, "eis:https://eis/tender", "T-1", "inn123", conn
             )
 
-        assert result.parse_status == "failed"
-        assert result.parse_source == "eis_failed"
-
-    @pytest.mark.asyncio
-    async def test_exception_returns_failed(self) -> None:
-        """When fallback_get_protocol raises → failed with eis_error."""
-        page = AsyncMock()
-        conn = AsyncMock()
-
-        with (
-            patch(
-                "src.parser.html_protocol.fallback_get_protocol",
-                new_callable=AsyncMock,
-                side_effect=Exception("network error"),
-            ),
-            patch(
-                "src.parser.html_protocol.upsert_protocol_analysis",
-                new_callable=AsyncMock,
-            ),
-        ):
-            from src.parser.html_protocol import _try_eis_protocol
-
-            result = await _try_eis_protocol(
-                page, "https://eis/tender", "T-1", "inn123", conn
-            )
-
-        assert result.parse_status == "failed"
-        assert result.parse_source == "eis_error"
+        assert result is None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -726,20 +698,20 @@ class TestAnalyzeTenderProtocol:
         assert "tendersData" in (result.notes or "")
 
     @pytest.mark.asyncio
-    async def test_no_tenders_data_with_eis_fallback(self) -> None:
-        """When tendersData not found but EIS link exists → delegates to EIS."""
+    async def test_no_tenders_data_with_external_fallback(self) -> None:
+        """When tendersData not found but external link exists → delegates to external."""
         page = AsyncMock()
         page.content = AsyncMock(return_value="<html>no data</html>")
 
         conn = AsyncMock()
 
-        eis_result = ProtocolParseResult(
+        fallback_result = ProtocolParseResult(
             tender_id="T-1",
             participants_count=2,
-            parse_source="eis_txt",
+            parse_source="gpb_docx",
             parse_status="success",
             doc_path=None,
-            notes="from EIS",
+            notes="from GPB",
         )
 
         with (
@@ -748,17 +720,17 @@ class TestAnalyzeTenderProtocol:
             patch(
                 "src.parser.html_protocol.extract_source_urls",
                 new_callable=AsyncMock,
-                return_value="eis:https://eis/1",
+                return_value="gpb:https://gpb/1",
             ),
             patch(
                 "src.parser.html_protocol.update_tender_source_urls",
                 new_callable=AsyncMock,
             ),
             patch(
-                "src.parser.html_protocol._try_eis_protocol",
+                "src.parser.html_protocol._try_external_fallbacks",
                 new_callable=AsyncMock,
-                return_value=eis_result,
-            ) as mock_eis,
+                return_value=fallback_result,
+            ) as mock_fb,
         ):
             from src.parser.html_protocol import analyze_tender_protocol
 
@@ -768,7 +740,7 @@ class TestAnalyzeTenderProtocol:
 
         assert result.parse_status == "success"
         assert result.participants_count == 2
-        mock_eis.assert_called_once()
+        mock_fb.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_no_protocols_in_tenders_data(self) -> None:

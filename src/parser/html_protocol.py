@@ -36,7 +36,23 @@ from src.parser.table_analyzer import MultiProtocolAnalysis, ProtocolData
 from src.parser.pdf_parser import extract_participants_from_pdf, is_scan_pdf
 from src.scraper.browser import polite_wait, safe_goto
 from src.scraper.eis_fallback import fallback_get_protocol
-from src.scraper.source_links import extract_source_urls, get_source_url
+from src.scraper.gpb_fallback import (
+    download_protocol_from_gpb,
+    get_protocol_links_from_gpb,
+)
+from src.scraper.rosatom_fallback import (
+    download_protocol_from_rosatom,
+    get_protocol_links_from_rosatom,
+)
+from src.scraper.roseltorg_fallback import (
+    download_protocol_from_roseltorg,
+    get_protocol_links_from_roseltorg,
+)
+from src.scraper.source_links import (
+    extract_source_urls,
+    get_source_url,
+    parse_source_urls,
+)
 
 
 @dataclass
@@ -322,83 +338,87 @@ def _parse_downloaded_file(file_path: Path) -> tuple[ParticipantResult, str]:
         )
 
 
-async def _try_eis_protocol(
+async def _try_external_fallbacks(
     page: Page,
-    eis_url: str,
+    source_urls_str: str,
     tender_id: str,
     customer_inn: str,
     conn: aiosqlite.Connection,
-) -> ProtocolParseResult:
-    """Пробует получить протокол с ЕИС (zakupki.gov.ru)."""
-    try:
-        protocol_path = await fallback_get_protocol(
-            page=page,
-            tender_eis_url=eis_url,
-            tender_id=tender_id,
-            customer_inn=customer_inn,
-        )
+) -> ProtocolParseResult | None:
+    """Пробует получить протоколы с внешних площадок (EIS, GPB, Rosatom, Roseltorg)."""
+    sources = parse_source_urls(source_urls_str)
 
-        if protocol_path is None:
-            result = ProtocolParseResult(
-                tender_id=tender_id,
-                participants_count=None,
-                parse_source="eis_not_found",
-                parse_status="no_protocol",
-                doc_path=None,
-                notes="Протокол не найден на ЕИС",
-            )
-            await _save_result(conn, result)
-            return result
+    # Приоритет аналогичен unified_fallback
+    priority = ["eis", "gpb", "rosatom", "roseltorg"]
 
-        # Парсим скачанный протокол
-        participant_result, parse_source = _parse_downloaded_file(protocol_path)
+    for platform in priority:
+        if platform not in sources:
+            continue
 
-        if participant_result.count is not None:
-            doc_path = (
-                str(protocol_path.relative_to(DOWNLOADS_DIR))
-                if KEEP_DOWNLOADED_DOCS
-                else None
-            )
-            result = ProtocolParseResult(
-                tender_id=tender_id,
-                participants_count=participant_result.count,
-                parse_source=f"eis_{parse_source}",
-                parse_status="success",
-                doc_path=doc_path,
-                notes=f"EIS: method={participant_result.method}, confidence={participant_result.confidence}",
-            )
-            await _save_result(conn, result)
-            logger.success(
-                "Тендер {} (ЕИС): {} участников (источник: eis_{})",
-                tender_id,
-                participant_result.count,
-                parse_source,
-            )
-            return result
-        else:
-            result = ProtocolParseResult(
-                tender_id=tender_id,
-                participants_count=None,
-                parse_source="eis_failed",
-                parse_status="failed",
-                doc_path=None,
-                notes=f"Не удалось извлечь участников из протокола ЕИС: {participant_result.method}",
-            )
-            await _save_result(conn, result)
-            return result
+        url = sources[platform]
+        logger.info(f"Пробуем фоллбэк протоколов {platform}: {url}")
 
-    except Exception as e:
-        logger.error("Ошибка при получении протокола с ЕИС: {}", e)
-        result = ProtocolParseResult(
-            tender_id=tender_id,
-            participants_count=None,
-            parse_source="eis_error",
-            parse_status="failed",
-            doc_path=None,
-            notes=f"Ошибка ЕИС: {str(e)[:100]}",
-        )
-        await _save_result(conn, result)
-        return result
+        try:
+            protocol_path = None
+            if platform == "eis":
+                protocol_path = await fallback_get_protocol(
+                    page=page,
+                    tender_eis_url=url,
+                    tender_id=tender_id,
+                    customer_inn=customer_inn,
+                )
+            elif platform == "gpb":
+                links = await get_protocol_links_from_gpb(page, url)
+                if links:
+                    protocol_path = await download_protocol_from_gpb(
+                        page, links[0], tender_id, customer_inn
+                    )
+            elif platform == "rosatom":
+                links = await get_protocol_links_from_rosatom(page, url)
+                if links:
+                    protocol_path = await download_protocol_from_rosatom(
+                        page, links[0], tender_id, customer_inn
+                    )
+            elif platform == "roseltorg":
+                links = await get_protocol_links_from_roseltorg(page, url)
+                if links:
+                    protocol_path = await download_protocol_from_roseltorg(
+                        page, links[0], tender_id, customer_inn
+                    )
+
+            if protocol_path:
+                # Парсим скачанный протокол
+                participant_result, parse_source = _parse_downloaded_file(protocol_path)
+
+                if participant_result.count is not None:
+                    doc_path = (
+                        str(protocol_path.relative_to(DOWNLOADS_DIR))
+                        if KEEP_DOWNLOADED_DOCS
+                        else None
+                    )
+                    result = ProtocolParseResult(
+                        tender_id=tender_id,
+                        participants_count=participant_result.count,
+                        parse_source=f"{platform}_{parse_source}",
+                        parse_status="success",
+                        doc_path=doc_path,
+                        notes=f"{platform.upper()}: method={participant_result.method}, confidence={participant_result.confidence}",
+                    )
+                    await _save_result(conn, result)
+                    logger.success(
+                        "Тендер {} ({}): {} участников (источник: {}_{})",
+                        tender_id,
+                        platform.upper(),
+                        participant_result.count,
+                        platform,
+                        parse_source,
+                    )
+                    return result
+
+        except Exception as e:
+            logger.error(f"Ошибка фоллбэка протоколов {platform}: {e}")
+
+    return None
 
 
 async def analyze_tender_protocol(
@@ -462,11 +482,14 @@ async def analyze_tender_protocol(
     tender_data = _extract_tenders_data(page_html, tender_id)
 
     if tender_data is None:
-        # Пробуем EIS фоллбэк
-        eis_url = get_source_url(source_urls, "eis")
-        if eis_url:
-            logger.info("tendersData не найден, пробуем ЕИС: {}", eis_url)
-            return await _try_eis_protocol(page, eis_url, tender_id, customer_inn, conn)
+        # Пробуем внешние фоллбэки
+        if source_urls:
+            logger.info("tendersData не найден, пробуем внешние площадки...")
+            result = await _try_external_fallbacks(
+                page, source_urls, tender_id, customer_inn, conn
+            )
+            if result:
+                return result
 
         result = ProtocolParseResult(
             tender_id=tender_id,
@@ -483,13 +506,16 @@ async def analyze_tender_protocol(
     protocols = _find_protocol_files(tender_data)
 
     if not protocols:
-        # Пробуем EIS фоллбэк
-        eis_url = get_source_url(source_urls, "eis")
-        if eis_url:
+        # Пробуем внешние фоллбэки
+        if source_urls:
             logger.info(
-                "Протоколы не найдены на rostender.info, пробуем ЕИС: {}", eis_url
+                "Протоколы не найдены на rostender.info, пробуем внешние площадки..."
             )
-            return await _try_eis_protocol(page, eis_url, tender_id, customer_inn, conn)
+            result = await _try_external_fallbacks(
+                page, source_urls, tender_id, customer_inn, conn
+            )
+            if result:
+                return result
 
         result = ProtocolParseResult(
             tender_id=tender_id,
