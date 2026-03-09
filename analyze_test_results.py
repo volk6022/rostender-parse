@@ -57,6 +57,8 @@ def find_file_in_downloads(path_part: str, downloads_dir: Path) -> Path | None:
         if match_path.is_file():
             full_path = match_path.resolve()
             # Проверяем совпадение с начало строки
+            match_parts = str(match_path).split("\\")
+            path_part_parts = path_part.split("/")
             if str(full_path).startswith(path_part) or str(full_path).startswith(
                 path_part.rstrip("/")
             ):
@@ -65,6 +67,10 @@ def find_file_in_downloads(path_part: str, downloads_dir: Path) -> Path | None:
                         matches.append(full_path)
                 except Exception:
                     continue
+            elif path_part in str(match_path):
+                matches.append(full_path)
+            elif len(match_parts) >= 3 and len(path_part_parts) >= 3 and match_parts[-3] == path_part_parts[-3] and match_parts[-2] == path_part_parts[-2] and match_parts[-1] == path_part_parts[-1]:
+                matches.append(full_path)
 
     if matches:
         # Возвратим первый подходящий
@@ -75,6 +81,7 @@ def find_file_in_downloads(path_part: str, downloads_dir: Path) -> Path | None:
     if filename_only:
         for match_path in downloads_dir.rglob("*"):
             if match_path.is_file() and filename_only in match_path.name:
+                logger.warning(f"Файл найден по паттерну: \n{path_part!r}\nнайден в: \n{match_path.resolve()}")
                 return match_path.resolve()
 
     logger.warning(f"Файл не найден по паттерну: {path_part!r}")
@@ -100,7 +107,8 @@ def parse_file_test(file_path: Path) -> dict[str, Any]:
 
         if len(text.strip()) > 50:
             parsed = extract_participants_from_text(text)
-            result["extracted_count"] = parsed.count
+            # result["extracted_count"] = parsed.count
+            result["extracted_count"] = len(parsed.numbers)
             result["extracted_numbers"] = parsed.numbers
             result["method"] = parsed.method
             result["confidence"] = parsed.confidence
@@ -156,6 +164,7 @@ def main() -> None:
 
     total_expected = 0
     total_extracted = 0
+    total_true = 0
 
     for idx, record in enumerate(test_records, 1):
         path_part = record["path_part"]
@@ -201,6 +210,10 @@ def main() -> None:
 
         # Запускаем тестовый парсинг
         parse_result = parse_file_test(file_path)
+        parse_result["expected_count"] = expected_count
+
+        if expected_count == parse_result["extracted_count"]:
+            total_true += 1
 
         # Сохраняем полные и краткие отчёты
         full_reports.append(generate_full_report(file_path, parse_result))
@@ -235,8 +248,9 @@ def main() -> None:
             "extraction_rate": (total_extracted / total_expected * 100)
             if total_expected > 0
             else 0,
+            "total_true": total_true,
         },
-        "brief_reports": brief_reports,
+        # "brief_reports": brief_reports,
         "full_reports": full_reports,
     }
 
@@ -254,12 +268,14 @@ def main() -> None:
         "  Файлов найдено: {}\n"
         "  Файлов распаршено: {}\n"
         "  Успешно извлечено: {}\n"
-        "  Процент успешных: {:.1f}%",
+        "  Процент успешных: {:.1f}%\n"
+        "  Количество правильных ответов {}",
         len(test_records),
         total_expected,
         total_expected,
         total_extracted,
         (total_extracted / total_expected * 100) if total_expected > 0 else 0,
+        total_true,
     )
 
 

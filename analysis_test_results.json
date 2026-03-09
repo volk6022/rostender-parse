@@ -1,0 +1,1022 @@
+{
+  "meta": {
+    "total_records": 56,
+    "files_found": 52,
+    "files_parsed": 52,
+    "files_with_extraction": 42,
+    "extraction_rate": 80.76923076923077,
+    "total_true": 42
+  },
+  "full_reports": [
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0274144861\\89842975\\Печатная форма_ Протокол рассмотрения первых частей заявок №32615688199-01.doc",
+      "file_name": "Печатная форма_ Протокол рассмотрения первых частей заявок №32615688199-01.doc",
+      "file_size": 11370,
+      "parse_result": {
+        "file": "Печатная форма_ Протокол рассмотрения первых частей заявок №32615688199-01.doc",
+        "file_size": 11370,
+        "parse_success": true,
+        "extracted_count": 2,
+        "extracted_numbers": [
+          1794,
+          5577
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 2
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0274144861\\89842975\\Протокол.doc",
+      "file_name": "Протокол.doc",
+      "file_size": 11370,
+      "parse_result": {
+        "file": "Протокол.doc",
+        "file_size": 11370,
+        "parse_success": true,
+        "extracted_count": 2,
+        "extracted_numbers": [
+          1794,
+          5577
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 2
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0274144861\\89861038\\Печатная форма_ Итоговый протокол №32615690653-03.doc",
+      "file_name": "Печатная форма_ Итоговый протокол №32615690653-03.doc",
+      "file_size": 11843,
+      "parse_result": {
+        "file": "Печатная форма_ Итоговый протокол №32615690653-03.doc",
+        "file_size": 11843,
+        "parse_success": true,
+        "extracted_count": 3,
+        "extracted_numbers": [
+          6287,
+          7021,
+          7704
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 3
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0274144861\\89861038\\Печатная форма_ Протокол рассмотрения вторых частей заявок №32615690653-02.doc",
+      "file_name": "Печатная форма_ Протокол рассмотрения вторых частей заявок №32615690653-02.doc",
+      "file_size": 10942,
+      "parse_result": {
+        "file": "Печатная форма_ Протокол рассмотрения вторых частей заявок №32615690653-02.doc",
+        "file_size": 10942,
+        "parse_success": true,
+        "extracted_count": 3,
+        "extracted_numbers": [
+          6287,
+          7021,
+          7704
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 3
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0274144861\\89861038\\Печатная форма_ Протокол рассмотрения первых частей заявок №32615690653-01.doc",
+      "file_name": "Печатная форма_ Протокол рассмотрения первых частей заявок №32615690653-01.doc",
+      "file_size": 14202,
+      "parse_result": {
+        "file": "Печатная форма_ Протокол рассмотрения первых частей заявок №32615690653-01.doc",
+        "file_size": 14202,
+        "parse_success": true,
+        "extracted_count": 6,
+        "extracted_numbers": [
+          665,
+          4072,
+          5293,
+          6287,
+          7021,
+          7704
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 6
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0274144861\\89861038\\Протокол.doc",
+      "file_name": "Протокол.doc",
+      "file_size": 14202,
+      "parse_result": {
+        "file": "Протокол.doc",
+        "file_size": 14202,
+        "parse_success": true,
+        "extracted_count": 6,
+        "extracted_numbers": [
+          665,
+          4072,
+          5293,
+          6287,
+          7021,
+          7704
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 6
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0274144861\\90006510\\Печатная форма_ Иной протокол №32615708461-01.doc",
+      "file_name": "Печатная форма_ Иной протокол №32615708461-01.doc",
+      "file_size": 9571,
+      "parse_result": {
+        "file": "Печатная форма_ Иной протокол №32615708461-01.doc",
+        "file_size": 9571,
+        "parse_success": true,
+        "extracted_count": 1,
+        "extracted_numbers": [
+          6995
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 1
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0274144861\\90006510\\Печатная форма_ Иной протокол №32615708461-02.doc",
+      "file_name": "Печатная форма_ Иной протокол №32615708461-02.doc",
+      "file_size": 11065,
+      "parse_result": {
+        "file": "Печатная форма_ Иной протокол №32615708461-02.doc",
+        "file_size": 11065,
+        "parse_success": true,
+        "extracted_count": 1,
+        "extracted_numbers": [
+          6995
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 1
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0274144861\\90006510\\Протокол.doc",
+      "file_name": "Протокол.doc",
+      "file_size": 9571,
+      "parse_result": {
+        "file": "Протокол.doc",
+        "file_size": 9571,
+        "parse_success": true,
+        "extracted_count": 1,
+        "extracted_numbers": [
+          6995
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 1
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0274144861\\90048763\\Печатная форма_ Иной протокол №32615713833-01.doc",
+      "file_name": "Печатная форма_ Иной протокол №32615713833-01.doc",
+      "file_size": 10779,
+      "parse_result": {
+        "file": "Печатная форма_ Иной протокол №32615713833-01.doc",
+        "file_size": 10779,
+        "parse_success": true,
+        "extracted_count": 2,
+        "extracted_numbers": [
+          5818,
+          9166
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 2
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0274144861\\90048763\\Печатная форма_ Иной протокол №32615713833-02.doc",
+      "file_name": "Печатная форма_ Иной протокол №32615713833-02.doc",
+      "file_size": 11925,
+      "parse_result": {
+        "file": "Печатная форма_ Иной протокол №32615713833-02.doc",
+        "file_size": 11925,
+        "parse_success": true,
+        "extracted_count": 2,
+        "extracted_numbers": [
+          5818,
+          9166
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 2
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0274144861\\90048763\\Протокол.doc",
+      "file_name": "Протокол.doc",
+      "file_size": 10779,
+      "parse_result": {
+        "file": "Протокол.doc",
+        "file_size": 10779,
+        "parse_success": true,
+        "extracted_count": 2,
+        "extracted_numbers": [
+          5818,
+          9166
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 2
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0277077282\\90029113\\Печатная форма_ Протокол рассмотрения первых частей заявок №32615711835-01.doc",
+      "file_name": "Печатная форма_ Протокол рассмотрения первых частей заявок №32615711835-01.doc",
+      "file_size": 9695,
+      "parse_result": {
+        "file": "Печатная форма_ Протокол рассмотрения первых частей заявок №32615711835-01.doc",
+        "file_size": 9695,
+        "parse_success": true,
+        "extracted_count": 3,
+        "extracted_numbers": [
+          1,
+          2,
+          3
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 3
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0277077282\\90029113\\Протокол.doc",
+      "file_name": "Протокол.doc",
+      "file_size": 9695,
+      "parse_result": {
+        "file": "Протокол.doc",
+        "file_size": 9695,
+        "parse_success": true,
+        "extracted_count": 3,
+        "extracted_numbers": [
+          1,
+          2,
+          3
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 3
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0277077282\\90032068\\Печатная форма_ Иной протокол №32615712216-01.doc",
+      "file_name": "Печатная форма_ Иной протокол №32615712216-01.doc",
+      "file_size": 10595,
+      "parse_result": {
+        "file": "Печатная форма_ Иной протокол №32615712216-01.doc",
+        "file_size": 10595,
+        "parse_success": true,
+        "extracted_count": 2,
+        "extracted_numbers": [
+          1,
+          2
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 2
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0277077282\\90032068\\Протокол.doc",
+      "file_name": "Протокол.doc",
+      "file_size": 10595,
+      "parse_result": {
+        "file": "Протокол.doc",
+        "file_size": 10595,
+        "parse_success": true,
+        "extracted_count": 2,
+        "extracted_numbers": [
+          1,
+          2
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 2
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0277077282\\90053370\\Печатная форма_ Протокол рассмотрения первых частей заявок №32615714655-01.doc",
+      "file_name": "Печатная форма_ Протокол рассмотрения первых частей заявок №32615714655-01.doc",
+      "file_size": 9043,
+      "parse_result": {
+        "file": "Печатная форма_ Протокол рассмотрения первых частей заявок №32615714655-01.doc",
+        "file_size": 9043,
+        "parse_success": true,
+        "extracted_count": 2,
+        "extracted_numbers": [
+          1,
+          2
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 2
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0277077282\\90053370\\Протокол.doc",
+      "file_name": "Протокол.doc",
+      "file_size": 9043,
+      "parse_result": {
+        "file": "Протокол.doc",
+        "file_size": 9043,
+        "parse_success": true,
+        "extracted_count": 2,
+        "extracted_numbers": [
+          1,
+          2
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 2
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0277077282\\90063340\\Печатная форма_ Иной протокол №32615716120-01.doc",
+      "file_name": "Печатная форма_ Иной протокол №32615716120-01.doc",
+      "file_size": 12990,
+      "parse_result": {
+        "file": "Печатная форма_ Иной протокол №32615716120-01.doc",
+        "file_size": 12990,
+        "parse_success": true,
+        "extracted_count": 4,
+        "extracted_numbers": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 4
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0277077282\\90063340\\Протокол.doc",
+      "file_name": "Протокол.doc",
+      "file_size": 12990,
+      "parse_result": {
+        "file": "Протокол.doc",
+        "file_size": 12990,
+        "parse_success": true,
+        "extracted_count": 4,
+        "extracted_numbers": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 4
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0277077282\\90170400\\Печатная форма_ Иной протокол №32615729420-01.doc",
+      "file_name": "Печатная форма_ Иной протокол №32615729420-01.doc",
+      "file_size": 11754,
+      "parse_result": {
+        "file": "Печатная форма_ Иной протокол №32615729420-01.doc",
+        "file_size": 11754,
+        "parse_success": true,
+        "extracted_count": 3,
+        "extracted_numbers": [
+          1,
+          2,
+          3
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 3
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0277077282\\90170400\\Протокол.doc",
+      "file_name": "Протокол.doc",
+      "file_size": 11754,
+      "parse_result": {
+        "file": "Протокол.doc",
+        "file_size": 11754,
+        "parse_success": true,
+        "extracted_count": 3,
+        "extracted_numbers": [
+          1,
+          2,
+          3
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 3
+      }
+    },
+    {
+      "file_path": "downloads/0608019083/75541463/Протокол подачи ценовых предложений от 13.05.2024 №ЦПА1.html",
+      "file_name": "NOT_FOUND",
+      "file_size": 0,
+      "parse_result": null,
+      "note": "Файл не найден в downloads/"
+    },
+    {
+      "file_path": "downloads/0608019083/75541463/Протокол подведения итогов определения поставщика (подрядчика, исполнителя) от 14.05.2024 №ИЭА1.html",
+      "file_name": "NOT_FOUND",
+      "file_size": 0,
+      "parse_result": null,
+      "note": "Файл не найден в downloads/"
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0608019083\\75541463\\Протокол подведения итогов_14.05.2024_20.47.50_0114500000824000728_2_1.docx.docx",
+      "file_name": "Протокол подведения итогов_14.05.2024_20.47.50_0114500000824000728_2_1.docx.docx",
+      "file_size": 32827,
+      "parse_result": {
+        "file": "Протокол подведения итогов_14.05.2024_20.47.50_0114500000824000728_2_1.docx.docx",
+        "file_size": 32827,
+        "parse_success": false,
+        "extracted_count": 0,
+        "extracted_numbers": [],
+        "method": "no_pattern_matched",
+        "confidence": "low",
+        "error": null,
+        "expected_count": 2
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0608019083\\75541463\\Результат определения поставщика (подрядчика, исполнителя), сформированный на основании размещенных .doc",
+      "file_name": "Результат определения поставщика (подрядчика, исполнителя), сформированный на основании размещенных .doc",
+      "file_size": 6836,
+      "parse_result": {
+        "file": "Результат определения поставщика (подрядчика, исполнителя), сформированный на основании размещенных .doc",
+        "file_size": 6836,
+        "parse_success": false,
+        "extracted_count": 0,
+        "extracted_numbers": [],
+        "method": "no_pattern_matched",
+        "confidence": "low",
+        "error": null,
+        "expected_count": 2
+      }
+    },
+    {
+      "file_path": "downloads/0608019083/75541469/Протокол подачи ценовых предложений от 13.05.2024 №ЦПА1.html",
+      "file_name": "NOT_FOUND",
+      "file_size": 0,
+      "parse_result": null,
+      "note": "Файл не найден в downloads/"
+    },
+    {
+      "file_path": "downloads/0608019083/75541469/Протокол подведения итогов определения поставщика (подрядчика, исполнителя) от 14.05.2024 №ИЭА1.html",
+      "file_name": "NOT_FOUND",
+      "file_size": 0,
+      "parse_result": null,
+      "note": "Файл не найден в downloads/"
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0608019083\\75541469\\Протокол подведения итогов_14.05.2024_20.39.43_0114500000824000720_2_1.docx.docx",
+      "file_name": "Протокол подведения итогов_14.05.2024_20.39.43_0114500000824000720_2_1.docx.docx",
+      "file_size": 34661,
+      "parse_result": {
+        "file": "Протокол подведения итогов_14.05.2024_20.39.43_0114500000824000720_2_1.docx.docx",
+        "file_size": 34661,
+        "parse_success": false,
+        "extracted_count": 0,
+        "extracted_numbers": [],
+        "method": "no_pattern_matched",
+        "confidence": "low",
+        "error": null,
+        "expected_count": 6
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0608019083\\75541469\\Результат определения поставщика (подрядчика, исполнителя), сформированный на основании размещенных .doc",
+      "file_name": "Результат определения поставщика (подрядчика, исполнителя), сформированный на основании размещенных .doc",
+      "file_size": 6834,
+      "parse_result": {
+        "file": "Результат определения поставщика (подрядчика, исполнителя), сформированный на основании размещенных .doc",
+        "file_size": 6834,
+        "parse_success": false,
+        "extracted_count": 0,
+        "extracted_numbers": [],
+        "method": "no_pattern_matched",
+        "confidence": "low",
+        "error": null,
+        "expected_count": 2
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0608019083\\76383637\\Протокол подведения итогов определения поставщика (подрядчика, исполнителя) от 09.07.2024 №ИЭОК1.xml",
+      "file_name": "Протокол подведения итогов определения поставщика (подрядчика, исполнителя) от 09.07.2024 №ИЭОК1.xml",
+      "file_size": 47036,
+      "parse_result": {
+        "file": "Протокол подведения итогов определения поставщика (подрядчика, исполнителя) от 09.07.2024 №ИЭОК1.xml",
+        "file_size": 47036,
+        "parse_success": false,
+        "extracted_count": 0,
+        "extracted_numbers": [],
+        "method": "no_pattern_matched",
+        "confidence": "low",
+        "error": null,
+        "expected_count": 0
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0608019083\\76383637\\Протокол рассмотрения и оценки вторых частей заявок на участие в открытом конкурсе в электронной фор.xml",
+      "file_name": "Протокол рассмотрения и оценки вторых частей заявок на участие в открытом конкурсе в электронной фор.xml",
+      "file_size": 49330,
+      "parse_result": {
+        "file": "Протокол рассмотрения и оценки вторых частей заявок на участие в открытом конкурсе в электронной фор.xml",
+        "file_size": 49330,
+        "parse_success": false,
+        "extracted_count": 0,
+        "extracted_numbers": [],
+        "method": "no_pattern_matched",
+        "confidence": "low",
+        "error": null,
+        "expected_count": 0
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0608019083\\76383637\\Результат определения поставщика (подрядчика, исполнителя), сформированный на основании размещенных .doc",
+      "file_name": "Результат определения поставщика (подрядчика, исполнителя), сформированный на основании размещенных .doc",
+      "file_size": 6836,
+      "parse_result": {
+        "file": "Результат определения поставщика (подрядчика, исполнителя), сформированный на основании размещенных .doc",
+        "file_size": 6836,
+        "parse_success": false,
+        "extracted_count": 0,
+        "extracted_numbers": [],
+        "method": "no_pattern_matched",
+        "confidence": "low",
+        "error": null,
+        "expected_count": 2
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\0608019083\\82175224\\Протокол рассмотрения и оценки вторых частей заявок 27.03.2025 15.23.06 0114500000825000473 3 1.docx.docx",
+      "file_name": "Протокол рассмотрения и оценки вторых частей заявок 27.03.2025 15.23.06 0114500000825000473 3 1.docx.docx",
+      "file_size": 28499,
+      "parse_result": {
+        "file": "Протокол рассмотрения и оценки вторых частей заявок 27.03.2025 15.23.06 0114500000825000473 3 1.docx.docx",
+        "file_size": 28499,
+        "parse_success": false,
+        "extracted_count": 0,
+        "extracted_numbers": [],
+        "method": "no_pattern_matched",
+        "confidence": "low",
+        "error": null,
+        "expected_count": 2
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\1434031363\\90195685\\41044005 Протокол РЗ.rtf.rtf",
+      "file_name": "41044005 Протокол РЗ.rtf.rtf",
+      "file_size": 506623,
+      "parse_result": {
+        "file": "41044005 Протокол РЗ.rtf.rtf",
+        "file_size": 506623,
+        "parse_success": false,
+        "extracted_count": 0,
+        "extracted_numbers": [],
+        "method": "no_pattern_matched",
+        "confidence": "low",
+        "error": null,
+        "expected_count": 1
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\1434031363\\90238364\\12016166 Протокол РЗ.rtf.rtf",
+      "file_name": "12016166 Протокол РЗ.rtf.rtf",
+      "file_size": 504028,
+      "parse_result": {
+        "file": "12016166 Протокол РЗ.rtf.rtf",
+        "file_size": 504028,
+        "parse_success": false,
+        "extracted_count": 0,
+        "extracted_numbers": [],
+        "method": "no_pattern_matched",
+        "confidence": "low",
+        "error": null,
+        "expected_count": 1
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\1655063821\\88749339\\Печатная форма_ Итоговый протокол №32515524467-04.doc",
+      "file_name": "Печатная форма_ Итоговый протокол №32515524467-04.doc",
+      "file_size": 13075,
+      "parse_result": {
+        "file": "Печатная форма_ Итоговый протокол №32515524467-04.doc",
+        "file_size": 13075,
+        "parse_success": true,
+        "extracted_count": 4,
+        "extracted_numbers": [
+          582,
+          3654,
+          8755,
+          9893
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 4
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\1655063821\\88749339\\Печатная форма_ Протокол подачи дополнительных ценовых предложений №32515524467-03.doc",
+      "file_name": "Печатная форма_ Протокол подачи дополнительных ценовых предложений №32515524467-03.doc",
+      "file_size": 10298,
+      "parse_result": {
+        "file": "Печатная форма_ Протокол подачи дополнительных ценовых предложений №32515524467-03.doc",
+        "file_size": 10298,
+        "parse_success": true,
+        "extracted_count": 4,
+        "extracted_numbers": [
+          582,
+          3654,
+          8755,
+          9893
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 4
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\1655063821\\88749339\\Печатная форма_ Протокол рассмотрения вторых частей заявок №32515524467-02.doc",
+      "file_name": "Печатная форма_ Протокол рассмотрения вторых частей заявок №32515524467-02.doc",
+      "file_size": 11902,
+      "parse_result": {
+        "file": "Печатная форма_ Протокол рассмотрения вторых частей заявок №32515524467-02.doc",
+        "file_size": 11902,
+        "parse_success": true,
+        "extracted_count": 4,
+        "extracted_numbers": [
+          582,
+          3654,
+          8755,
+          9893
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 4
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\1655063821\\88749339\\Печатная форма_ Протокол рассмотрения первых частей заявок №32515524467-01.doc",
+      "file_name": "Печатная форма_ Протокол рассмотрения первых частей заявок №32515524467-01.doc",
+      "file_size": 10404,
+      "parse_result": {
+        "file": "Печатная форма_ Протокол рассмотрения первых частей заявок №32515524467-01.doc",
+        "file_size": 10404,
+        "parse_success": true,
+        "extracted_count": 4,
+        "extracted_numbers": [
+          582,
+          3654,
+          8755,
+          9893
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 4
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\1655063821\\88749339\\Протокол.doc",
+      "file_name": "Протокол.doc",
+      "file_size": 10404,
+      "parse_result": {
+        "file": "Протокол.doc",
+        "file_size": 10404,
+        "parse_success": true,
+        "extracted_count": 4,
+        "extracted_numbers": [
+          582,
+          3654,
+          8755,
+          9893
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 4
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\1655063821\\88811292\\Печатная форма_ Итоговый протокол №32515530572-04.doc",
+      "file_name": "Печатная форма_ Итоговый протокол №32515530572-04.doc",
+      "file_size": 9886,
+      "parse_result": {
+        "file": "Печатная форма_ Итоговый протокол №32515530572-04.doc",
+        "file_size": 9886,
+        "parse_success": true,
+        "extracted_count": 1,
+        "extracted_numbers": [
+          7157
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 2
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\1655063821\\88811292\\Печатная форма_ Протокол подачи дополнительных ценовых предложений №32515530572-03.doc",
+      "file_name": "Печатная форма_ Протокол подачи дополнительных ценовых предложений №32515530572-03.doc",
+      "file_size": 8132,
+      "parse_result": {
+        "file": "Печатная форма_ Протокол подачи дополнительных ценовых предложений №32515530572-03.doc",
+        "file_size": 8132,
+        "parse_success": true,
+        "extracted_count": 1,
+        "extracted_numbers": [
+          7157
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 2
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\1655063821\\88811292\\Печатная форма_ Протокол рассмотрения вторых частей заявок №32515530572-02.doc",
+      "file_name": "Печатная форма_ Протокол рассмотрения вторых частей заявок №32515530572-02.doc",
+      "file_size": 12324,
+      "parse_result": {
+        "file": "Печатная форма_ Протокол рассмотрения вторых частей заявок №32515530572-02.doc",
+        "file_size": 12324,
+        "parse_success": true,
+        "extracted_count": 2,
+        "extracted_numbers": [
+          2099,
+          7157
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 2
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\1655063821\\88811292\\Печатная форма_ Протокол рассмотрения первых частей заявок №32515530572-01.doc",
+      "file_name": "Печатная форма_ Протокол рассмотрения первых частей заявок №32515530572-01.doc",
+      "file_size": 8933,
+      "parse_result": {
+        "file": "Печатная форма_ Протокол рассмотрения первых частей заявок №32515530572-01.doc",
+        "file_size": 8933,
+        "parse_success": true,
+        "extracted_count": 2,
+        "extracted_numbers": [
+          2099,
+          7157
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 2
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\1655063821\\88811292\\Протокол.doc",
+      "file_name": "Протокол.doc",
+      "file_size": 8933,
+      "parse_result": {
+        "file": "Протокол.doc",
+        "file_size": 8933,
+        "parse_success": true,
+        "extracted_count": 2,
+        "extracted_numbers": [
+          2099,
+          7157
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 2
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\1655063821\\89269377\\Печатная форма_ Итоговый протокол №32615610591-04.doc",
+      "file_name": "Печатная форма_ Итоговый протокол №32615610591-04.doc",
+      "file_size": 10698,
+      "parse_result": {
+        "file": "Печатная форма_ Итоговый протокол №32615610591-04.doc",
+        "file_size": 10698,
+        "parse_success": true,
+        "extracted_count": 2,
+        "extracted_numbers": [
+          4276,
+          4307
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 2
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\1655063821\\89269377\\Печатная форма_ Протокол подачи дополнительных ценовых предложений №32615610591-03.doc",
+      "file_name": "Печатная форма_ Протокол подачи дополнительных ценовых предложений №32615610591-03.doc",
+      "file_size": 9430,
+      "parse_result": {
+        "file": "Печатная форма_ Протокол подачи дополнительных ценовых предложений №32615610591-03.doc",
+        "file_size": 9430,
+        "parse_success": true,
+        "extracted_count": 2,
+        "extracted_numbers": [
+          4276,
+          4307
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 2
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\1655063821\\89269377\\Печатная форма_ Протокол рассмотрения вторых частей заявок №32615610591-02.doc",
+      "file_name": "Печатная форма_ Протокол рассмотрения вторых частей заявок №32615610591-02.doc",
+      "file_size": 14879,
+      "parse_result": {
+        "file": "Печатная форма_ Протокол рассмотрения вторых частей заявок №32615610591-02.doc",
+        "file_size": 14879,
+        "parse_success": true,
+        "extracted_count": 4,
+        "extracted_numbers": [
+          4276,
+          4307,
+          7008,
+          9949
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 4
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\1655063821\\89269377\\Печатная форма_ Протокол рассмотрения первых частей заявок №32615610591-01.doc",
+      "file_name": "Печатная форма_ Протокол рассмотрения первых частей заявок №32615610591-01.doc",
+      "file_size": 11031,
+      "parse_result": {
+        "file": "Печатная форма_ Протокол рассмотрения первых частей заявок №32615610591-01.doc",
+        "file_size": 11031,
+        "parse_success": true,
+        "extracted_count": 4,
+        "extracted_numbers": [
+          4276,
+          4307,
+          7008,
+          9949
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 4
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\1655063821\\89269377\\Протокол.doc",
+      "file_name": "Протокол.doc",
+      "file_size": 11031,
+      "parse_result": {
+        "file": "Протокол.doc",
+        "file_size": 11031,
+        "parse_success": true,
+        "extracted_count": 4,
+        "extracted_numbers": [
+          4276,
+          4307,
+          7008,
+          9949
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 4
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\1655063821\\89492381\\Печатная форма_ Итоговый протокол №32615641066-04.doc",
+      "file_name": "Печатная форма_ Итоговый протокол №32615641066-04.doc",
+      "file_size": 10176,
+      "parse_result": {
+        "file": "Печатная форма_ Итоговый протокол №32615641066-04.doc",
+        "file_size": 10176,
+        "parse_success": true,
+        "extracted_count": 1,
+        "extracted_numbers": [
+          9884
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 1
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\1655063821\\89492381\\Печатная форма_ Протокол подачи дополнительных ценовых предложений №32615641066-03.doc",
+      "file_name": "Печатная форма_ Протокол подачи дополнительных ценовых предложений №32615641066-03.doc",
+      "file_size": 8510,
+      "parse_result": {
+        "file": "Печатная форма_ Протокол подачи дополнительных ценовых предложений №32615641066-03.doc",
+        "file_size": 8510,
+        "parse_success": true,
+        "extracted_count": 1,
+        "extracted_numbers": [
+          9884
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 1
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\1655063821\\89492381\\Печатная форма_ Протокол рассмотрения вторых частей заявок №32615641066-02.doc",
+      "file_name": "Печатная форма_ Протокол рассмотрения вторых частей заявок №32615641066-02.doc",
+      "file_size": 9593,
+      "parse_result": {
+        "file": "Печатная форма_ Протокол рассмотрения вторых частей заявок №32615641066-02.doc",
+        "file_size": 9593,
+        "parse_success": true,
+        "extracted_count": 1,
+        "extracted_numbers": [
+          9884
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 1
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\1655063821\\89492381\\Печатная форма_ Протокол рассмотрения первых частей заявок №32615641066-01.doc",
+      "file_name": "Печатная форма_ Протокол рассмотрения первых частей заявок №32615641066-01.doc",
+      "file_size": 9157,
+      "parse_result": {
+        "file": "Печатная форма_ Протокол рассмотрения первых частей заявок №32615641066-01.doc",
+        "file_size": 9157,
+        "parse_success": true,
+        "extracted_count": 1,
+        "extracted_numbers": [
+          9884
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 1
+      }
+    },
+    {
+      "file_path": "C:\\Users\\bhunp\\Documents\\rostender-parse\\downloads\\1655063821\\89492381\\Протокол.doc",
+      "file_name": "Протокол.doc",
+      "file_size": 9157,
+      "parse_result": {
+        "file": "Протокол.doc",
+        "file_size": 9157,
+        "parse_success": true,
+        "extracted_count": 1,
+        "extracted_numbers": [
+          9884
+        ],
+        "method": "numbered_applications",
+        "confidence": "medium",
+        "error": null,
+        "expected_count": 1
+      }
+    }
+  ]
+}
