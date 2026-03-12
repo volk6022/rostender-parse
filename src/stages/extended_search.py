@@ -63,6 +63,7 @@ async def run_extended_search(page: Page, params: PipelineParams) -> None:
                     page,
                     inn,
                     keywords=params.keywords,
+                    exclude_keywords=params.exclude_keywords,
                     min_price=params.min_price_related,
                 )
         except Exception as search_err:

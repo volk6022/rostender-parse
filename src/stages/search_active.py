@@ -41,6 +41,7 @@ async def run_search_active(page: Page, params: PipelineParams) -> None:
         active_tenders = await search_active_tenders(
             page,
             keywords=params.keywords,
+            exclude_keywords=params.exclude_keywords,
             min_price=params.min_price_active,
             date_from=params.date_from,
             date_to=params.date_to,

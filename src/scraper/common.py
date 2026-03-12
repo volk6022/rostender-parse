@@ -54,16 +54,43 @@ async def _fill_common_filters(
     """
     # Ключевые слова
     await page.fill(S["search_keywords_input"], ", ".join(keywords))
-    # Маленькая пауза, чтобы input event обработался
-    await page.wait_for_timeout(300)
 
     # Исключения (если переданы или из конфига)
     effective_exclude = (
         exclude_keywords if exclude_keywords is not None else EXCLUDE_KEYWORDS
     )
     if effective_exclude:
-        await page.fill(S["search_exceptions_input"], ", ".join(effective_exclude))
+        val = ", ".join(effective_exclude)
+        logger.info(f"Заполнение исключений: {val}")
+        await page.focus(S["search_exceptions_input"])
+        await page.fill(S["search_exceptions_input"], "")
+        await page.type(S["search_exceptions_input"], val, delay=20)
+        await page.keyboard.press("Enter")  # Попробуем нажать Enter для фиксации
         await page.wait_for_timeout(300)
+
+    # Цена от: используем скрытое поле напрямую через JS
+    await page.evaluate(
+        """
+        ([val, selPrice, selDisp]) => {
+            const elPrice = document.querySelector(selPrice);
+            const elDisp = document.querySelector(selDisp);
+            if (!elPrice) return;
+            elPrice.value = val;
+            if (elDisp && typeof jQuery !== 'undefined' && jQuery(elDisp).maskMoney) {
+                jQuery(elDisp).maskMoney('mask', parseFloat(val));
+            } else if (elDisp) {
+                elDisp.value = val;
+            }
+        }
+    """,
+        [str(min_price), S["search_min_price"], S["search_min_price_disp"]],
+    )
+
+    # Скрывать без цены
+    await page.evaluate(
+        "sel => { const el = document.querySelector(sel); if (el && !el.checked) el.click(); }",
+        S["search_hide_price"],
+    )
 
     # Цена от: используем скрытое поле напрямую через JS,
     # т.к. disp-поле имеет maskMoney-плагин, который может мешать вводу.

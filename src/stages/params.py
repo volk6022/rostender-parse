@@ -14,6 +14,7 @@ from src.config import (
     HISTORICAL_TENDERS_LIMIT as DEFAULT_HISTORY_LIMIT,
     MAX_PARTICIPANTS_THRESHOLD as DEFAULT_MAX_PARTICIPANTS,
     COMPETITION_RATIO_THRESHOLD as DEFAULT_RATIO_THRESHOLD,
+    EXCLUDE_KEYWORDS as DEFAULT_EXCLUDE_KEYWORDS,
     SEARCH_DATE_FROM as DEFAULT_DATE_FROM,
     SEARCH_DATE_TO as DEFAULT_DATE_TO,
     OUTPUT_FORMATS as DEFAULT_OUTPUT_FORMATS,
@@ -25,6 +26,7 @@ class PipelineParams:
     """Неизменяемый набор параметров, общий для всех этапов pipeline."""
 
     keywords: list[str]
+    exclude_keywords: list[str]
     min_price_active: int
     min_price_related: int
     min_price_historical: int
@@ -43,6 +45,11 @@ class PipelineParams:
         """Создаёт PipelineParams, объединяя CLI-аргументы и дефолты из config.yaml."""
 
         keywords = args.keywords if args.keywords else DEFAULT_KEYWORDS
+        exclude_keywords = (
+            args.exclude_keywords
+            if getattr(args, "exclude_keywords", None)
+            else DEFAULT_EXCLUDE_KEYWORDS
+        )
 
         min_price_active = (
             args.min_price if args.min_price is not None else DEFAULT_MIN_PRICE_ACTIVE
@@ -79,6 +86,7 @@ class PipelineParams:
 
         return PipelineParams(
             keywords=keywords,
+            exclude_keywords=exclude_keywords,
             min_price_active=min_price_active,
             min_price_related=min_price_related,
             min_price_historical=min_price_historical,

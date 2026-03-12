@@ -68,6 +68,13 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         help="Ключевые слова для поиска (через пробел)",
     )
     parser.add_argument(
+        "--exclude-keywords",
+        "-e",
+        nargs="+",
+        default=None,
+        help="Слова-исключения для поиска (через пробел)",
+    )
+    parser.add_argument(
         "--min-price",
         "-p",
         type=int,
@@ -238,10 +245,11 @@ async def run() -> None:
 
     logger.info("=== Rostender Parser запущен ===")
     logger.info(
-        "Команда: {}, keywords={}, min_price={}, history_limit={}, "
+        "Команда: {}, keywords={}, exclude={}, min_price={}, history_limit={}, "
         "max_participants={}, ratio_threshold={}, formats={}, date={}-{}",
         command,
         len(params.keywords),
+        len(params.exclude_keywords),
         f"{params.min_price_active:_}",
         params.history_limit,
         params.max_participants,

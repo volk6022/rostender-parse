@@ -33,18 +33,15 @@ async def _fill_active_filters(
     page: Page,
     keywords: list[str],
     min_price: int,
+    exclude_keywords: list[str] | None = None,
 ) -> None:
     """Заполнить общие и специфичные фильтры для активных тендеров.
 
     Включает: ключевые слова, исключения, мин. цену, скрытие без цены,
     этап «Прием заявок», исключение аукционов и ед. поставщика.
     """
-    # 1. Заполняем общие фильтры
-    await _fill_common_filters(page, keywords, min_price)
-
-    # 2. Специфичные для активных тендеров фильтры
+    # 1. Сначала специфичные фильтры (выпадающие списки), т.к. они могут триггерить JS
     # Этап: Прием заявок (значение "10").
-    # Используем jQuery + Chosen plugin.
     await page.evaluate(
         """
         ([val, sel]) => {
@@ -81,6 +78,12 @@ async def _fill_active_filters(
     """,
         [["1", "28"], S["search_placement_ways"]],
     )
+
+    # Небольшая пауза, чтобы скрипты сайта отработали возможные изменения
+    await page.wait_for_timeout(500)
+
+    # 2. Теперь заполняем общие фильтры (текстовые поля и цена)
+    await _fill_common_filters(page, keywords, min_price, exclude_keywords)
 
 
 async def _submit_and_collect(
@@ -263,6 +266,7 @@ async def search_active_tenders(
     page: Page,
     *,
     keywords: list[str] | None = None,
+    exclude_keywords: list[str] | None = None,
     min_price: int = MIN_PRICE_ACTIVE,
     date_from: str | None = None,
     date_to: str | None = None,
@@ -275,18 +279,22 @@ async def search_active_tenders(
     Args:
         page: Playwright страница.
         keywords: Список ключевых слов для поиска.
+        exclude_keywords: Список слов-исключений для поиска.
         min_price: Минимальная цена.
         date_from: Дата начала поиска (DD.MM.YYYY).
         date_to: Дата окончания поиска (DD.MM.YYYY).
     """
-    from src.config import SEARCH_KEYWORDS
+    from src.config import EXCLUDE_KEYWORDS, SEARCH_KEYWORDS
 
     logger.info("Поиск активных тендеров на rostender.info...")
 
     effective_keywords = keywords if keywords is not None else SEARCH_KEYWORDS
+    effective_exclude = (
+        exclude_keywords if exclude_keywords is not None else EXCLUDE_KEYWORDS
+    )
 
     await _navigate_to_search(page)
-    await _fill_active_filters(page, effective_keywords, min_price)
+    await _fill_active_filters(page, effective_keywords, min_price, effective_exclude)
 
     # Дата публикации: из параметров или "сегодня"
     effective_date_from = date_from or datetime.now().strftime("%d.%m.%Y")
@@ -445,6 +453,7 @@ async def search_tenders_by_inn(
     inn: str,
     *,
     keywords: list[str] | None = None,
+    exclude_keywords: list[str] | None = None,
     min_price: int = MIN_PRICE_RELATED,
 ) -> list[dict[str, Any]]:
     """
@@ -454,27 +463,29 @@ async def search_tenders_by_inn(
         page: Playwright-страница.
         inn: ИНН заказчика.
         keywords: Список ключевых слов для поиска.
+        exclude_keywords: Список слов-исключений для поиска.
         min_price: Минимальная цена (по умолчанию 2M для расширенного поиска).
 
     Returns:
         Список словарей с данными тендеров.
     """
-    from src.config import SEARCH_KEYWORDS
+    from src.config import EXCLUDE_KEYWORDS, SEARCH_KEYWORDS
 
     logger.info(f"Поиск активных тендеров для ИНН {inn} (мин. цена: {min_price})...")
 
     effective_keywords = keywords if keywords is not None else SEARCH_KEYWORDS
+    effective_exclude = (
+        exclude_keywords if exclude_keywords is not None else EXCLUDE_KEYWORDS
+    )
 
     await _navigate_to_search(page)
 
     # ИНН заказчика (специфичное поле, только для этого варианта поиска)
     await page.fill(S["search_customers_input"], inn)
-    await page.keyboard.press("Enter")
-    # Сразу закрываем подсказки
-    await page.keyboard.press("Escape")
     await page.wait_for_timeout(300)
+    await page.keyboard.press("Escape")  # Закрыть подсказки, если появились
 
-    await _fill_active_filters(page, effective_keywords, min_price)
+    await _fill_active_filters(page, effective_keywords, min_price, effective_exclude)
 
     all_tenders = await _submit_and_collect(
         page,
