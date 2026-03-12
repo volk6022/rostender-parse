@@ -92,6 +92,7 @@ rostender --dry-run
 
 ```bash
 rostender search-active          # Этап 1: Поиск активных тендеров + извлечение ИНН
+rostender report-active          # Генерация списка активных тендеров (отчёт из Этапа 1)
 rostender analyze-history        # Этап 2: Анализ истории заказчиков
 rostender extended-search        # Этап 3: Расширенный поиск по интересным заказчикам
 rostender report                 # Этап 4: Генерация отчёта (без браузера)
@@ -106,8 +107,11 @@ rostender --days-back 14 --min-price 10000000
 # Только поиск активных с кастомными ключевыми словами
 rostender search-active -k Поставка Оборудование --min-price 10000000
 
-# Перегенерировать отчёт по уже собранным данным
+# Перегенерировать основной отчёт по уже собранным данным
 rostender report
+
+# Сгенерировать список активных тендеров из БД
+rostender report-active
 ```
 
 ## Архитектура
@@ -147,7 +151,8 @@ rostender report
     │   └── repository.py
     └── reporter/            # Генерация отчётов
         ├── console_report.py
-        └── excel_report.py
+        ├── excel_report.py
+        └── active_tenders_report.py # Отчёт по активным тендерам
 ```
 
 ## Пайплайн
@@ -156,7 +161,8 @@ rostender report
 
 | Команда | Этап | Браузер | Описание |
 |---------|------|---------|----------|
-| `rostender search-active` | 1 | да | Поиск активных тендеров, извлечение ИНН заказчиков |
+| `rostender search-active` | 1 | да | Поиск активных тендеров, извлечение ИНН заказчиков + сохранение Excel-списка |
+| `rostender report-active` | - | нет | Генерация Excel-списка активных тендеров из БД |
 | `rostender analyze-history` | 2 | да | Поиск завершённых тендеров, парсинг протоколов, расчёт метрик |
 | `rostender extended-search` | 3 | да | Дополнительные тендеры по интересным заказчикам |
 | `rostender report` | 4 | нет | Генерация отчёта (Excel + консоль) по данным из БД |

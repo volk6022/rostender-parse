@@ -379,12 +379,12 @@ async def _try_external_fallbacks(
                     protocol_path = await download_protocol_from_rosatom(
                         page, links[0], tender_id, customer_inn
                     )
-            elif platform == "roseltorg":
-                links = await get_protocol_links_from_roseltorg(page, url)
-                if links:
-                    protocol_path = await download_protocol_from_roseltorg(
-                        page, links[0], tender_id, customer_inn
-                    )
+            # elif platform == "roseltorg":
+            #     links = await get_protocol_links_from_roseltorg(page, url)
+            #     if links:
+            #         protocol_path = await download_protocol_from_roseltorg(
+            #             page, links[0], tender_id, customer_inn
+            #         )
 
             if protocol_path:
                 # Парсим скачанный протокол

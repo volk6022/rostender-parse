@@ -19,6 +19,7 @@ from src.scraper.active_tenders import (
 )
 from src.scraper.unified_fallback import unified_fallback_extract_inn
 from src.stages.params import PipelineParams
+from src.stages.report import run_active_report
 from src.utils.monitoring import StageStats, timed_operation
 
 
@@ -114,6 +115,9 @@ async def run_search_active(page: Page, params: PipelineParams) -> None:
 
     stats.log_final()
     logger.info("Этап 1: завершён")
+
+    # Генерируем Excel-отчёт со списком активных тендеров
+    await run_active_report(params)
 
 
 async def _flush_active_batch(conn, tenders, customers):

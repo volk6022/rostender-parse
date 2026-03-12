@@ -380,6 +380,27 @@ async def get_interesting_customers(
     return list(await cursor.fetchall())
 
 
+async def get_customer_metrics(
+    conn: aiosqlite.Connection,
+    customer_inn: str,
+) -> dict[str, Any] | None:
+    """Получить метрики последнего успешного анализа для заказчика."""
+    cursor = await conn.execute(
+        """
+        SELECT 
+            total_historical, total_analyzed, total_skipped, 
+            low_competition_count, competition_ratio
+        FROM results 
+        WHERE customer_inn = ? 
+        ORDER BY created_at DESC 
+        LIMIT 1
+        """,
+        (customer_inn,),
+    )
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
 async def tender_exists(
     conn: aiosqlite.Connection,
     tender_id: str,

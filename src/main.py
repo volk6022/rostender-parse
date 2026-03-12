@@ -21,7 +21,7 @@ from src.scraper.browser import create_browser, create_page
 from src.stages.analyze_history import run_analyze_history
 from src.stages.extended_search import run_extended_search
 from src.stages.params import PipelineParams
-from src.stages.report import run_report
+from src.stages.report import run_report, run_active_report
 from src.stages.search_active import run_search_active
 
 
@@ -153,6 +153,7 @@ def _parse_args() -> argparse.Namespace:
             "  rostender analyze-history          # Stage 2 only\n"
             "  rostender extended-search          # Stage 3 only\n"
             "  rostender report                   # Stage 4 only (no browser)\n"
+            "  rostender report-active            # Generate active tenders report\n"
             "  rostender --dry-run                # Show params, no execution\n"
             "  rostender search-active -k keyword1 keyword2 --min-price 10000000\n"
         ),
@@ -202,6 +203,14 @@ def _parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     _add_common_args(s4)
+
+    # report-active — Дополнительный отчёт по активным тендерам
+    s_active = subparsers.add_parser(
+        "report-active",
+        help="Генерация Excel со списком активных тендеров",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    _add_common_args(s_active)
 
     args = parser.parse_args()
 
@@ -265,6 +274,10 @@ async def run() -> None:
     elif command == "report":
         # Отчёт: браузер не нужен
         await run_report(params)
+
+    elif command == "report-active":
+        # Отчёт по активным: браузер не нужен
+        await run_active_report(params)
 
     elif command in ("search-active", "analyze-history", "extended-search"):
         # Отдельный этап: собственная браузерная сессия

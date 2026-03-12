@@ -11,7 +11,7 @@ flowchart TB
     subgraph CLI["main.py — CLI Dispatcher"]
         direction TB
         run["run() async — dispatcher"]
-        subcommands["Subcommands:<br/>run | search-active | analyze-history<br/>extended-search | report"]
+        subcommands["Subcommands:<br/>run | search-active | analyze-history<br/>extended-search | report | report-active"]
     end
 
     subgraph ConfigYAML["config.yaml — User Configuration"]
@@ -246,6 +246,7 @@ classDiagram
 #### `report.py` — Stage 4
 
 - `run_report(params)` — Generate console + Excel reports from DB data. **No browser required.**
+- `run_active_report()` — Generate Excel report specifically for active tenders.
 - **DB reads:** all tables
 
 ### `scraper/` — Web Scraping
@@ -658,7 +659,8 @@ rostender-parse/
 │   └── reporter/
 │       ├── __init__.py
 │       ├── console_report.py # Console output formatting
-│       └── excel_report.py   # Excel .xlsx generation
+│       ├── excel_report.py   # Excel .xlsx generation
+│       └── active_tenders_report.py # Active tenders specific Excel report
 │
 └── tests/
     ├── __init__.py
@@ -715,6 +717,7 @@ python -m src.main
 
 # Run individual stages
 rostender search-active          # Stage 1: Search active tenders
+rostender report-active          # Generate active tenders report (Stage 1 result)
 rostender analyze-history        # Stage 2: Analyze customer history
 rostender extended-search        # Stage 3: Extended search
 rostender report                 # Stage 4: Generate report (no browser)

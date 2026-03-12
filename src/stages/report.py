@@ -10,7 +10,9 @@ from src.db.repository import (
     get_all_results,
     get_connection,
     get_interesting_results,
+    get_active_tenders,
 )
+from src.reporter.active_tenders_report import generate_active_tenders_report
 from src.reporter.console_report import log_console_summary, print_console_report
 from src.reporter.excel_report import generate_excel_report
 from src.stages.params import PipelineParams
@@ -46,3 +48,19 @@ async def run_report(params: PipelineParams) -> None:
         logger.success("Отчёт сохранён: {}", excel_path)
 
     logger.info("Этап 4: завершён")
+
+
+async def run_active_report(params: PipelineParams) -> None:
+    """Генерация отдельного отчёта по активным тендерам."""
+    logger.info("Генерация отчёта по активным тендерам...")
+    async with get_connection() as conn:
+        all_active = await get_active_tenders(conn)
+
+    # Дополнительная фильтрация по минимальной цене
+    filtered_tenders = [
+        t for t in all_active if (t["price"] or 0) >= params.min_price_active
+    ]
+
+    report_path = generate_active_tenders_report(filtered_tenders)
+    if report_path:
+        logger.success("Отчёт по активным тендерам готов: {}", report_path)
