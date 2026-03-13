@@ -117,13 +117,13 @@ class TestExtractKeywordsFromTitle:
         has_capitalized = any(r[0].isupper() for r in result if len(r) > 5)
         assert has_capitalized
 
-    def test_words_shorter_than_6_not_added_individually(self):
-        """Слова <= 5 символов не добавляются как отдельные ключевые слова."""
-        result = extract_keywords_from_title("Тест крыша стена пол мебель")
+    def test_words_shorter_than_4_not_added_individually(self):
+        """Слова < 4 символов не добавляются как отдельные ключевые слова."""
+        result = extract_keywords_from_title("Тест крыша пол")
         # Filter out the first_part phrase to check individual words
         lower_results = [r.lower() for r in result if len(r.split()) == 1]
-        assert "крыша" not in lower_results  # 5 chars, not > 5
-        assert "стена" not in lower_results  # 5 chars, not > 5
+        assert "пол" not in lower_results  # 3 chars, not >= 4
+        assert "крыша" in lower_results  # 5 chars, is >= 4
 
 
 # ── Tests for search_historical_tenders ──────────────────────────────────────

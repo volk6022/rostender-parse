@@ -52,8 +52,21 @@ async def _fill_common_filters(
 
     Включает: ключевые слова, исключения, мин. цену, скрытие без цены.
     """
-    # Ключевые слова
-    await page.fill(S["search_keywords_input"], ", ".join(keywords))
+    # Ключевые слова: используем запятую как разделитель, согласно требованиям сайта.
+    if keywords:
+        val_kw = ", ".join(keywords)
+        logger.info(f"Заполнение ключевых слов: {val_kw}")
+        await page.focus(S["search_keywords_input"])
+        await page.fill(S["search_keywords_input"], "")
+        await page.type(S["search_keywords_input"], val_kw, delay=10)
+
+        # Принудительно вызываем события, чтобы JS сайта "увидел" текст
+        await page.evaluate(
+            "sel => { const el = document.querySelector(sel); if (el) { el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); } }",
+            S["search_keywords_input"],
+        )
+        await page.keyboard.press("Tab")  # Уводим фокус для фиксации значения
+        await page.wait_for_timeout(300)
 
     # Исключения (если переданы или из конфига)
     effective_exclude = (
@@ -64,33 +77,9 @@ async def _fill_common_filters(
         logger.info(f"Заполнение исключений: {val}")
         await page.focus(S["search_exceptions_input"])
         await page.fill(S["search_exceptions_input"], "")
-        await page.type(S["search_exceptions_input"], val, delay=20)
-        await page.keyboard.press("Enter")  # Попробуем нажать Enter для фиксации
+        await page.type(S["search_exceptions_input"], val, delay=10)
+        await page.keyboard.press("Enter")
         await page.wait_for_timeout(300)
-
-    # Цена от: используем скрытое поле напрямую через JS
-    await page.evaluate(
-        """
-        ([val, selPrice, selDisp]) => {
-            const elPrice = document.querySelector(selPrice);
-            const elDisp = document.querySelector(selDisp);
-            if (!elPrice) return;
-            elPrice.value = val;
-            if (elDisp && typeof jQuery !== 'undefined' && jQuery(elDisp).maskMoney) {
-                jQuery(elDisp).maskMoney('mask', parseFloat(val));
-            } else if (elDisp) {
-                elDisp.value = val;
-            }
-        }
-    """,
-        [str(min_price), S["search_min_price"], S["search_min_price_disp"]],
-    )
-
-    # Скрывать без цены
-    await page.evaluate(
-        "sel => { const el = document.querySelector(sel); if (el && !el.checked) el.click(); }",
-        S["search_hide_price"],
-    )
 
     # Цена от: используем скрытое поле напрямую через JS,
     # т.к. disp-поле имеет maskMoney-плагин, который может мешать вводу.
@@ -135,6 +124,9 @@ async def submit_search(page: Page, log_context: str = "") -> None:
     )
 
     try:
+        # Даем JS сайта время на обработку введенных данных (фильтры, маски и т.д.)
+        await page.wait_for_timeout(500)
+
         # Проверяем видимость и нажимаем принудительно
         await search_btn_locator.wait_for(state="visible", timeout=5000)
         await search_btn_locator.click(force=True)

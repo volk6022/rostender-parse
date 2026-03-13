@@ -34,7 +34,7 @@ async def _fill_historical_filters(
     """Заполнить фильтры для поиска завершенных тендеров."""
     # 1. Заказчик (ИНН) - специфично для поиска по ИНН
     await page.fill(S["search_customers_input"], customer_inn)
-    await page.keyboard.press("Enter")
+    await page.wait_for_timeout(300)
     await page.keyboard.press("Escape")
 
     # 2. Общие фильтры (Ключевые слова, Цена, Скрывать без цены)
@@ -99,14 +99,14 @@ def extract_keywords_from_title(title: str) -> list[str]:
     keywords: list[str] = []
 
     # ── 1. Первая смысловая фраза (до запятой / скобки), макс. 60 символов ─
-    if len(clean_title) > 10:
+    if len(clean_title) > 5:
         first_part = clean_title.split(",")[0].split("(")[0].strip()
         # Убираем хвосты вида «на 2026-2028 гг.» / «для ООО «...»»
         first_part = re.sub(r"\s+(?:на|для|от|до|по|в)\s+\d.*$", "", first_part).strip()
         if len(first_part) > 60:
             # Обрезаем по границе слова
             first_part = " ".join(first_part[:60].split(" ")[:-1])
-        if len(first_part) > 5:
+        if len(first_part) >= 3:
             keywords.append(first_part)
 
     # ── 2. Значимые отдельные слова (>= 4 буквы, не стоп-слова) ────────────
@@ -132,7 +132,7 @@ def extract_keywords_from_title(title: str) -> list[str]:
     important_words = [w for w in words if w not in _stop_words]
 
     for word in important_words[:5]:
-        if len(word) > 5:
+        if len(word) >= 4:
             keywords.append(word.capitalize())
 
     # ── 3. Совпадения с SEARCH_KEYWORDS ────────────────────────────────────

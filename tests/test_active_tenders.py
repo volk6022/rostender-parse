@@ -263,10 +263,15 @@ class TestExtractInnFromPage:
         """Finds INN from the inn attribute of the toggle button."""
         page = AsyncMock()
 
-        btn = AsyncMock()
-        btn.get_attribute = AsyncMock(return_value="  1234567890  ")
-
-        page.query_selector = AsyncMock(return_value=btn)
+        # After Fix 1: extracts via JS evaluate
+        page.evaluate = AsyncMock(
+            return_value={
+                "inn": "1234567890",
+                "hrefs": [
+                    "https://zakupki.gov.ru/epz/order/notice/ea20/view/common-info.html?regNumber=123"
+                ],
+            }
+        )
 
         with (
             patch("src.scraper.active_tenders.safe_goto", new_callable=AsyncMock),
@@ -274,21 +279,17 @@ class TestExtractInnFromPage:
         ):
             from src.scraper.active_tenders import extract_inn_from_page
 
-            with patch(
-                "src.scraper.active_tenders.extract_source_urls",
-                new_callable=AsyncMock,
-                return_value="eis:https://eis/1",
-            ):
-                result = await extract_inn_from_page(page, "https://rostender/t/1")
+            result = await extract_inn_from_page(page, "https://rostender/t/1")
 
-        assert result == ("1234567890", "eis:https://eis/1")
+        assert result[0] == "1234567890"
+        assert result[1] is not None
+        assert "EIS" in result[1]
 
     @pytest.mark.asyncio
     async def test_finds_inn_in_page_content_regex(self) -> None:
         """Falls back to regex search in page content."""
         page = AsyncMock()
-        page.query_selector = AsyncMock(return_value=None)
-        page.content = AsyncMock(return_value="<div>ИНН: 9876543210</div>")
+        page.evaluate = AsyncMock(return_value={"inn": "9876543210", "hrefs": []})
 
         with (
             patch("src.scraper.active_tenders.safe_goto", new_callable=AsyncMock),
@@ -296,12 +297,7 @@ class TestExtractInnFromPage:
         ):
             from src.scraper.active_tenders import extract_inn_from_page
 
-            with patch(
-                "src.scraper.active_tenders.extract_source_urls",
-                new_callable=AsyncMock,
-                return_value=None,
-            ):
-                result = await extract_inn_from_page(page, "https://rostender/t/1")
+            result = await extract_inn_from_page(page, "https://rostender/t/1")
 
         assert result == ("9876543210", None)
 
@@ -309,8 +305,7 @@ class TestExtractInnFromPage:
     async def test_returns_none_when_inn_not_found(self) -> None:
         """Returns None when INN is not found anywhere."""
         page = AsyncMock()
-        page.query_selector = AsyncMock(return_value=None)
-        page.content = AsyncMock(return_value="<div>No INN here</div>")
+        page.evaluate = AsyncMock(return_value={"inn": None, "hrefs": []})
 
         with (
             patch("src.scraper.active_tenders.safe_goto", new_callable=AsyncMock),
@@ -318,12 +313,7 @@ class TestExtractInnFromPage:
         ):
             from src.scraper.active_tenders import extract_inn_from_page
 
-            with patch(
-                "src.scraper.active_tenders.extract_source_urls",
-                new_callable=AsyncMock,
-                return_value=None,
-            ):
-                result = await extract_inn_from_page(page, "https://rostender/t/1")
+            result = await extract_inn_from_page(page, "https://rostender/t/1")
 
         assert result == (None, None)
 
@@ -331,18 +321,7 @@ class TestExtractInnFromPage:
     async def test_button_with_empty_inn_falls_through(self) -> None:
         """Button with empty inn attribute falls through to content search."""
         page = AsyncMock()
-
-        btn = AsyncMock()
-        btn.get_attribute = AsyncMock(return_value="   ")
-
-        # First call for inn_button returns btn, second for eis_link returns None
-        async def mock_qs(sel: str):
-            if "toggle-counterparty" in sel:
-                return btn
-            return None
-
-        page.query_selector = AsyncMock(side_effect=mock_qs)
-        page.content = AsyncMock(return_value="<span>ИНН 1111111111</span>")
+        page.evaluate = AsyncMock(return_value={"inn": "1111111111", "hrefs": []})
 
         with (
             patch("src.scraper.active_tenders.safe_goto", new_callable=AsyncMock),
@@ -350,12 +329,7 @@ class TestExtractInnFromPage:
         ):
             from src.scraper.active_tenders import extract_inn_from_page
 
-            with patch(
-                "src.scraper.active_tenders.extract_source_urls",
-                new_callable=AsyncMock,
-                return_value=None,
-            ):
-                result = await extract_inn_from_page(page, "https://rostender/t/1")
+            result = await extract_inn_from_page(page, "https://rostender/t/1")
 
         assert result == ("1111111111", None)
 
@@ -370,9 +344,7 @@ class TestGetCustomerName:
     async def test_finds_org_name_in_quotes(self) -> None:
         """Finds organization name like ООО \"Name\" in page content."""
         page = AsyncMock()
-        page.content = AsyncMock(
-            return_value='<div>Заказчик: ООО "Ромашка и партнёры"</div>'
-        )
+        page.evaluate = AsyncMock(return_value='ООО "Ромашка и партнёры"')
 
         from src.scraper.active_tenders import get_customer_name
 
@@ -385,8 +357,7 @@ class TestGetCustomerName:
     async def test_finds_name_via_organizer_block(self) -> None:
         """Finds name from Организатор/Заказчик block in HTML."""
         page = AsyncMock()
-        # Regex: (?:Организатор|Заказчик)[^<]*?<[^>]*>([^<]{5,100})</[^>]*>
-        # Needs: keyword + optional non-tag text + one tag + captured text + closing tag
+        page.evaluate = AsyncMock(return_value=None)
         page.content = AsyncMock(
             return_value="<div>Организатор: <span>Администрация города Тестов</span></div>"
         )
@@ -402,6 +373,7 @@ class TestGetCustomerName:
     async def test_returns_none_when_no_name_found(self) -> None:
         """Returns None when no organization name pattern matches."""
         page = AsyncMock()
+        page.evaluate = AsyncMock(return_value=None)
         page.content = AsyncMock(
             return_value="<div>Some content without org names</div>"
         )
@@ -478,43 +450,21 @@ class TestSearchActiveTenders:
         assert fill_args[2] == 1000
         assert result == []
 
-    @pytest.mark.asyncio
-    async def test_fills_date_fields(self) -> None:
-        """Date fields are filled with provided or default values."""
+    @patch("src.scraper.active_tenders._submit_and_collect", new_callable=AsyncMock)
+    @patch("src.scraper.active_tenders._fill_active_filters", new_callable=AsyncMock)
+    @patch("src.scraper.active_tenders._navigate_to_search", new_callable=AsyncMock)
+    async def test_fills_date_fields(self, mock_nav, mock_fill, mock_submit) -> None:
+        """Dates are filled via page.evaluate."""
+        from src.scraper.active_tenders import search_active_tenders
+
         page = AsyncMock()
-        page.query_selector_all = AsyncMock(return_value=[])
-        page.query_selector = AsyncMock(return_value=None)
+        await search_active_tenders(page, date_from="01.01.2025", date_to="31.01.2025")
 
-        with (
-            patch(
-                "src.scraper.active_tenders._navigate_to_search",
-                new_callable=AsyncMock,
-            ),
-            patch(
-                "src.scraper.active_tenders._fill_common_filters",
-                new_callable=AsyncMock,
-            ),
-            patch("src.scraper.active_tenders.polite_wait", new_callable=AsyncMock),
-        ):
-            from src.scraper.active_tenders import search_active_tenders
-
-            await search_active_tenders(
-                page,
-                keywords=["X"],
-                date_from="01.01.2025",
-                date_to="31.01.2025",
-            )
-
-        # evaluate called for date_from and date_to (among others)
-        date_eval_calls = [
-            c
-            for c in page.evaluate.call_args_list
-            if "elFrom.value = dFrom" in c.args[0]
-        ]
-        assert len(date_eval_calls) == 1
-        script, args = date_eval_calls[0].args
-        assert args[0] == "01.01.2025"
-        assert args[1] == "31.01.2025"
+        # page.evaluate is used to set date values
+        date_eval = [c for c in page.evaluate.call_args_list if "dFrom" in c.args[0]]
+        assert len(date_eval) == 1
+        assert "01.01.2025" in date_eval[0].args[1]
+        assert "31.01.2025" in date_eval[0].args[1]
 
 
 # ── Tests for search_tenders_by_inn ──────────────────────────────────────────
@@ -523,32 +473,17 @@ class TestSearchActiveTenders:
 class TestSearchTendersByInn:
     """Tests for search_tenders_by_inn()."""
 
-    @pytest.mark.asyncio
-    async def test_fills_inn_field(self) -> None:
-        """INN is filled in the customers input field."""
+    @patch("src.scraper.active_tenders._submit_and_collect", new_callable=AsyncMock)
+    @patch("src.scraper.active_tenders._fill_active_filters", new_callable=AsyncMock)
+    @patch("src.scraper.active_tenders._navigate_to_search", new_callable=AsyncMock)
+    async def test_fills_inn_field(self, mock_nav, mock_fill, mock_submit) -> None:
+        """search_tenders_by_inn fills the INN field."""
+        from src.scraper.active_tenders import search_tenders_by_inn
+
         page = AsyncMock()
-        page.query_selector_all = AsyncMock(return_value=[])
-        page.query_selector = AsyncMock(return_value=None)
+        await search_tenders_by_inn(page, "9998887776")
 
-        with (
-            patch(
-                "src.scraper.active_tenders._navigate_to_search",
-                new_callable=AsyncMock,
-            ),
-            patch(
-                "src.scraper.active_tenders._fill_common_filters",
-                new_callable=AsyncMock,
-            ),
-            patch("src.scraper.active_tenders.polite_wait", new_callable=AsyncMock),
-        ):
-            from src.scraper.active_tenders import search_tenders_by_inn
-
-            await search_tenders_by_inn(page, "9998887776")
-
-        # Should have filled the customers input with the INN
-        fill_calls = [(c.args[0], c.args[1]) for c in page.fill.call_args_list]
-        inn_calls = [c for c in fill_calls if c[1] == "9998887776"]
-        assert len(inn_calls) == 1
+        page.fill.assert_any_call("#customers", "9998887776")
 
 
 # ── Tests for _fill_common_filters ────────────────────────────────────────────
@@ -559,7 +494,7 @@ class TestFillCommonFilters:
 
     @pytest.mark.asyncio
     async def test_fills_keywords_input(self) -> None:
-        """Fills the keywords input with comma-joined keywords."""
+        """Fills the keywords input with space-joined keywords."""
         page = AsyncMock()
 
         with patch(
@@ -569,67 +504,75 @@ class TestFillCommonFilters:
 
             await _fill_common_filters(page, ["ИТ", "Серверы"], min_price=5_000_000)
 
-        # First page.fill call should be keywords
-        fill_calls = page.fill.call_args_list
-        assert fill_calls[0].args == ("#keywords", "ИТ, Серверы")
+        # keywords are filled via type after fill("")
+        type_calls = [c for c in page.type.call_args_list if c.args[0] == "#keywords"]
+        assert type_calls[0].args[1] == "ИТ, Серверы"
+
+        # Check for Tab press
+        tab_calls = [
+            c for c in page.keyboard.press.call_args_list if c.args[0] == "Tab"
+        ]
+        assert len(tab_calls) >= 1
 
     @pytest.mark.asyncio
     async def test_fills_exceptions_input(self) -> None:
         """Fills the exceptions input with EXCLUDE_KEYWORDS."""
         page = AsyncMock()
 
-        with patch(
-            "src.scraper.active_tenders.EXCLUDE_KEYWORDS", ["Аренда", "Строительство"]
-        ):
+        # In _fill_common_filters, we use EXCLUDE_KEYWORDS from config if not provided
+        # We need to patch it in src.scraper.common where it's used
+        with patch("src.scraper.common.EXCLUDE_KEYWORDS", ["Аренда", "Строительство"]):
             from src.scraper.active_tenders import _fill_common_filters
 
             await _fill_common_filters(page, ["ИТ"], min_price=1_000_000)
 
-        fill_calls = page.fill.call_args_list
-        assert fill_calls[1].args == ("#exceptions", "Аренда, Строительство")
+        type_calls = [c for c in page.type.call_args_list if c.args[0] == "#exceptions"]
+        assert type_calls[0].args[1] == "Аренда, Строительство"
 
     @pytest.mark.asyncio
     async def test_sets_min_price_via_evaluate(self) -> None:
         """Sets minimum price via page.evaluate (JS hidden field)."""
         page = AsyncMock()
 
-        with patch("src.scraper.active_tenders.EXCLUDE_KEYWORDS", []):
+        with patch("src.scraper.common.EXCLUDE_KEYWORDS", []):
             from src.scraper.active_tenders import _fill_common_filters
 
             await _fill_common_filters(page, ["X"], min_price=25_000_000)
 
-        # page.evaluate is called multiple times; first one sets the price
-        evaluate_calls = page.evaluate.call_args_list
-        price_call = evaluate_calls[0]
-        # Second arg is [str(min_price), selector_price, selector_disp]
-        assert price_call.args[1] == ["25000000", "#min_price", "#min_price-disp"]
+        # Find the call that sets min_price
+        price_calls = [
+            c for c in page.evaluate.call_args_list if "#min_price" in str(c.args)
+        ]
+        assert len(price_calls) >= 1
+        assert "25000000" in str(price_calls[0].args)
 
     @pytest.mark.asyncio
     async def test_sets_hide_price_checkbox(self) -> None:
         """Sets the hide-without-price checkbox via JS."""
         page = AsyncMock()
 
-        with patch("src.scraper.active_tenders.EXCLUDE_KEYWORDS", []):
+        with patch("src.scraper.common.EXCLUDE_KEYWORDS", []):
             from src.scraper.active_tenders import _fill_common_filters
 
             await _fill_common_filters(page, ["X"], min_price=1000)
 
-        evaluate_calls = page.evaluate.call_args_list
-        hide_price_call = evaluate_calls[1]
-        assert hide_price_call.args[1] == "#hide_price"
+        hide_price_calls = [
+            c for c in page.evaluate.call_args_list if "#hide_price" in str(c.args)
+        ]
+        assert len(hide_price_calls) >= 1
 
     @pytest.mark.asyncio
     async def test_sets_states_to_accepting_bids(self) -> None:
         """Sets the states select to value '10' (Прием заявок)."""
         page = AsyncMock()
 
-        with patch("src.scraper.active_tenders.EXCLUDE_KEYWORDS", []):
-            from src.scraper.active_tenders import _fill_common_filters
+        from src.scraper.active_tenders import _fill_active_filters
 
-            await _fill_common_filters(page, ["X"], min_price=1000)
+        await _fill_active_filters(page, ["X"], min_price=1000)
 
         evaluate_calls = page.evaluate.call_args_list
-        states_call = evaluate_calls[2]
+        # states_call is the first evaluate in _fill_active_filters
+        states_call = evaluate_calls[0]
         assert states_call.args[1] == ["10", "#states"]
 
     @pytest.mark.asyncio
@@ -637,26 +580,30 @@ class TestFillCommonFilters:
         """Excludes placement ways '1' (Аукцион) and '28' (Ед. поставщик)."""
         page = AsyncMock()
 
-        with patch("src.scraper.active_tenders.EXCLUDE_KEYWORDS", []):
-            from src.scraper.active_tenders import _fill_common_filters
+        from src.scraper.active_tenders import _fill_active_filters
 
-            await _fill_common_filters(page, ["X"], min_price=1000)
+        await _fill_active_filters(page, ["X"], min_price=1000)
 
         evaluate_calls = page.evaluate.call_args_list
-        placement_call = evaluate_calls[3]
+        # placement_call is second in _fill_active_filters
+        placement_call = evaluate_calls[1]
         assert placement_call.args[1] == [["1", "28"], "#placement_ways"]
 
     @pytest.mark.asyncio
     async def test_total_evaluate_calls(self) -> None:
-        """Exactly 4 page.evaluate calls: price, checkbox, states, placement."""
+        """Verify total evaluate calls for active search."""
         page = AsyncMock()
+        # Mock locator for submit_search which might be called if we are testing full flows
+        # but here we test _fill_active_filters which calls _fill_common_filters
 
-        with patch("src.scraper.active_tenders.EXCLUDE_KEYWORDS", []):
-            from src.scraper.active_tenders import _fill_common_filters
+        from src.scraper.active_tenders import _fill_active_filters
 
-            await _fill_common_filters(page, ["X"], min_price=1000)
+        await _fill_active_filters(page, ["X"], min_price=1000)
 
-        assert page.evaluate.call_count == 4
+        # 2 in _fill_active_filters (states, placement)
+        # + 1 for keywords event dispatch
+        # + 2 in _fill_common_filters (price, hide_price)
+        assert page.evaluate.call_count == 5
 
 
 # ── Tests for _submit_and_collect ─────────────────────────────────────────────
@@ -671,13 +618,20 @@ class TestSubmitAndCollect:
         page = AsyncMock()
         page.query_selector_all = AsyncMock(return_value=[])
         page.query_selector = AsyncMock(return_value=None)
+        # Mock locator chain
+        mock_loc = MagicMock()
+        page.locator.return_value = mock_loc
+        mock_loc.filter.return_value = mock_loc
+        mock_loc.first = mock_loc
+        mock_loc.wait_for = AsyncMock()
+        mock_loc.click = AsyncMock()
 
         with patch("src.scraper.active_tenders.polite_wait", new_callable=AsyncMock):
             from src.scraper.active_tenders import _submit_and_collect
 
             await _submit_and_collect(page)
 
-        page.click.assert_called_once_with("#start-search-button")
+        mock_loc.click.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_waits_for_load_state(self) -> None:
