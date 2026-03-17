@@ -29,7 +29,7 @@ async def extract_inn_from_rosatom(page: Page, url: str) -> str | None:
     inn = await page.evaluate(r"""
         () => {
             const text = document.body.innerText;
-            const match = text.match(/ИНН\s*:?\s*(\d{10,12})/);
+            const match = text.match(/ИНН\s*[:\s]*(\d{10,12})/);
             return match ? match[1] : null;
         }
     """)

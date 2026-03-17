@@ -38,13 +38,30 @@ async def extract_inn_from_gpb(page: Page, url: str) -> str | None:
 
 
 async def get_protocol_links_from_gpb(page: Page, url: str) -> list[str]:
-    """Ищет ссылки на протоколы на GPB."""
+    """Ищет ссылки на протоколы и документацию на GPB."""
     await safe_goto(page, url)
     await polite_wait()
 
     links = await page.evaluate("""
-        () => Array.from(document.querySelectorAll('a[href*="protocol"], a[href*="протокол"]'))
-                  .map(a => a.href)
+        () => {
+            const selectors = [
+                'a[href*="protocol"]', 
+                'a[href*="протокол"]',
+                'a[href*=".pdf"]',
+                'a[href*=".docx"]',
+                'a[href*=".doc"]',
+                'a[href*=".zip"]'
+            ];
+            const found = [];
+            selectors.forEach(sel => {
+                document.querySelectorAll(sel).forEach(a => {
+                    if (a.href && !a.href.includes('personal-data') && !a.href.includes('cookiepolicy')) {
+                        found.push(a.href);
+                    }
+                });
+            });
+            return found;
+        }
     """)
     return list(set(links))
 
