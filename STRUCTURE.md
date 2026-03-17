@@ -41,7 +41,12 @@ flowchart TB
         active["active_tenders.py<br/>Search active tenders"]
         historical["historical_search.py<br/>Search completed tenders"]
         source_links["source_links.py<br/>Extract source URLs"]
-        eis["eis_fallback.py<br/>Fallback to zakupki.gov.ru"]
+        unified["unified_fallback.py<br/>Unified dispatcher"]
+        subgraph Fallbacks["fallbacks/ — Platform Strategies"]
+            base_f["base.py<br/>Strategy interface"]
+            eis_f["eis.py<br/>EIS strategy"]
+            gpb_f["gpb.py<br/>GPB strategy"]
+        end
     end
 
     subgraph Parser["parser/ — Document Parsing"]
@@ -315,14 +320,13 @@ classDiagram
 - `get_source_url(source_urls, source_name)` — Extract specific source URL from string
 - `parse_source_urls(source_urls)` — Parse source string into dictionary
 
-#### `eis_fallback.py`
+#### `unified_fallback.py`
+- `unified_fallback_extract_inn(page, source_urls_str)` — Main dispatcher that uses the `FallbackRegistry` to attempt INN extraction from available external platforms.
 
-**Functions:**
-- `fallback_extract_inn(page, tender_url)` — Extract INN via zakupki.gov.ru
-- `extract_inn_from_eis(page, eis_url)` — Parse INN from EIS page
-- `search_historical_tenders_on_eis(page, customer_inn, limit)` — Search tenders on EIS
-- `get_protocol_link_from_eis(page, tender_eis_url)` — Find protocol link on EIS
-- `download_protocol_from_eis(page, protocol_url, tender_id, customer_inn)` — Download protocol file
+#### `fallbacks/` — Platform Strategies
+A modular system for extracting data from external procurement platforms.
+- `base.py` — Defines `FallbackStrategy` ABC and `@register_fallback` decorator.
+- `eis.py`, `gpb.py`, `rosatom.py`, `roseltorg.py` — Platform-specific extraction logic.
 
 ### `parser/` — Document Parsing
 

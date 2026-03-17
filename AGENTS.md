@@ -4,7 +4,7 @@ Auto-generated from all feature plans. Last updated: 2026-03-17
 
 ## Active Technologies
 
-- Python >=3.11 + `playwright`, `aiosqlite`, `loguru`, `pyyaml` (001-structure-md)
+- Python >=3.11 + `uv`, `playwright`, `aiosqlite`, `loguru`, `pyyaml` (001-structure-md)
 
 ## Project Structure
 
@@ -15,7 +15,7 @@ tests/
 
 ## Commands
 
-cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLOGIES] pytest [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLOGIES] ruff check .
+`uv run rostender` | `uv run pytest` | `uv lock` | `uv pip install -e .`
 
 ## Code Style
 

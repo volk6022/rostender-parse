@@ -9,7 +9,7 @@ Refactor the scraper's fallback architecture to improve maintainability and alig
 
 ## Technical Context
 
-**Language/Version**: Python >=3.11
+**Language/Version**: Python >=3.11 (with `uv`)
 **Primary Dependencies**: `playwright`, `aiosqlite`, `loguru`, `pyyaml`
 **Storage**: SQLite (`data/rostender.db`)
 **Testing**: `pytest` + `pytest-asyncio`
