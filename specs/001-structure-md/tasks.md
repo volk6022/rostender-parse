@@ -17,10 +17,10 @@
 
 **Purpose**: Baseline verification and initial package structure
 
-- [ ] T001 Capture baseline metrics by running `uv run .specify/extensions/workflows/refactor/measure-metrics.sh --before`
-- [ ] T002 Verify 100% test pass rate for all fallback-related tests by running `uv run pytest tests/`
-- [ ] T003 Create fallback package directory `src/scraper/fallbacks/`
-- [ ] T004 Create `src/scraper/fallbacks/__init__.py` for package initialization
+- [X] T001 Capture baseline metrics by running `uv run .specify/extensions/workflows/refactor/measure-metrics.sh --before`
+- [X] T002 Verify 100% test pass rate for all fallback-related tests by running `uv run pytest tests/`
+- [X] T003 Create fallback package directory `src/scraper/fallbacks/`
+- [X] T004 Create `src/scraper/fallbacks/__init__.py` for package initialization
 
 ---
 
@@ -28,9 +28,9 @@
 
 **Purpose**: Core infrastructure for the Registry pattern
 
-- [ ] T005 [P] Implement `FallbackStrategy` base class in `src/scraper/fallbacks/base.py`
-- [ ] T006 [P] Implement `@register_fallback` decorator in `src/scraper/fallbacks/base.py`
-- [ ] T007 Implement `FallbackRegistry` in `src/scraper/fallbacks/__init__.py`
+- [X] T005 [P] Implement `FallbackStrategy` base class in `src/scraper/fallbacks/base.py`
+- [X] T006 [P] Implement `@register_fallback` decorator in `src/scraper/fallbacks/base.py`
+- [X] T007 Implement `FallbackRegistry` in `src/scraper/fallbacks/__init__.py`
 
 **Checkpoint**: Infrastructure ready - fallback migration can now begin
 
@@ -44,10 +44,10 @@
 
 ### Implementation for User Story 1
 
-- [ ] T008 [P] [US1] Create modularized EIS fallback in `src/scraper/fallbacks/eis.py` using `EISFallback` class
-- [ ] T009 [US1] Register `EISFallback` using `@register_fallback("eis")`
-- [ ] T010 [US1] Update `tests/test_eis_fallback.py` to import from `src.scraper.fallbacks.eis` if necessary
-- [ ] T011 [US1] Verify EIS fallback tests pass independently
+- [X] T008 [P] [US1] Create modularized EIS fallback in `src/scraper/fallbacks/eis.py` using `EISFallback` class
+- [X] T009 [US1] Register `EISFallback` using `@register_fallback("eis")`
+- [X] T010 [US1] Update `tests/test_eis_fallback.py` to import from `src.scraper.fallbacks.eis` if necessary
+- [/] T011 [US1] Verify EIS fallback tests pass independently
 
 **Checkpoint**: EIS fallback is fully functional and modularized
 
@@ -61,9 +61,9 @@
 
 ### Implementation for User Story 2
 
-- [ ] T012 [P] [US2] Create modularized GPB fallback in `src/scraper/fallbacks/gpb.py`
-- [ ] T013 [US2] Register `GPBFallback` using `@register_fallback("gpb")`
-- [ ] T014 [US2] Verify GPB fallback functionality independently
+- [X] T012 [P] [US2] Create modularized GPB fallback in `src/scraper/fallbacks/gpb.py`
+- [X] T013 [US2] Register `GPBFallback` using `@register_fallback("gpb")`
+- [/] T014 [US2] Verify GPB fallback functionality independently
 
 **Checkpoint**: GPB fallback is fully functional and modularized
 
@@ -77,10 +77,10 @@
 
 ### Implementation for User Story 3
 
-- [ ] T015 [P] [US3] Create modularized Rosatom fallback in `src/scraper/fallbacks/rosatom.py`
-- [ ] T016 [P] [US3] Create modularized Roseltorg fallback in `src/scraper/fallbacks/roseltorg.py`
-- [ ] T017 [US3] Register `RosatomFallback` and `RoseltorgFallback`
-- [ ] T018 [US3] Verify remaining fallbacks functionality independently
+- [X] T015 [P] [US3] Create modularized Rosatom fallback in `src/scraper/fallbacks/rosatom.py`
+- [X] T016 [P] [US3] Create modularized Roseltorg fallback in `src/scraper/fallbacks/roseltorg.py`
+- [X] T017 [US3] Register `RosatomFallback` and `RoseltorgFallback`
+- [/] T018 [US3] Verify remaining fallbacks functionality independently
 
 ---
 
@@ -92,10 +92,10 @@
 
 ### Implementation for User Story 4
 
-- [ ] T019 [US4] Refactor `src/scraper/unified_fallback.py` to use `FallbackRegistry`
-- [ ] T020 [US4] Remove old fallback files: `src/scraper/eis_fallback.py`, `src/scraper/gpb_fallback.py`, etc.
-- [ ] T021 [US4] Update `STRUCTURE.md` to reflect the new `src/scraper/fallbacks/` architecture
-- [ ] T022 [US4] Run full integration test of the pipeline to ensure no regressions in INN extraction
+- [X] T019 [US4] Refactor `src/scraper/unified_fallback.py` to use `FallbackRegistry`
+- [X] T020 [US4] Remove old fallback files: `src/scraper/eis_fallback.py`, `src/scraper/gpb_fallback.py`, etc.
+- [X] T021 [US4] Update `STRUCTURE.md` to reflect the new `src/scraper/fallbacks/` architecture
+- [X] T022 [US4] Run full integration test of the pipeline to ensure no regressions in INN extraction
 
 ---
 
@@ -103,9 +103,9 @@
 
 **Purpose**: Final documentation and metrics
 
-- [ ] T023 [P] Update docstrings and comments in `src/scraper/fallbacks/`
-- [ ] T024 Capture after metrics by running `.specify/extensions/workflows/refactor/measure-metrics.sh --after`
-- [ ] T025 Verify quickstart.md instructions for adding a new fallback
+- [X] T023 [P] Update docstrings and comments in `src/scraper/fallbacks/`
+- [X] T024 Capture after metrics by running `.specify/extensions/workflows/refactor/measure-metrics.sh --after`
+- [X] T025 Verify quickstart.md instructions for adding a new fallback
 
 ---
 

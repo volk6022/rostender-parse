@@ -44,8 +44,11 @@ flowchart TB
         unified["unified_fallback.py<br/>Unified dispatcher"]
         subgraph Fallbacks["fallbacks/ — Platform Strategies"]
             base_f["base.py<br/>Strategy interface"]
+            registry["__init__.py<br/>FallbackRegistry"]
             eis_f["eis.py<br/>EIS strategy"]
             gpb_f["gpb.py<br/>GPB strategy"]
+            rosatom_f["rosatom.py<br/>Rosatom strategy"]
+            roseltorg_f["roseltorg.py<br/>Roseltorg strategy"]
         end
     end
 
@@ -325,6 +328,7 @@ classDiagram
 
 #### `fallbacks/` — Platform Strategies
 A modular system for extracting data from external procurement platforms.
+- `__init__.py` — Central `FallbackRegistry` implementation.
 - `base.py` — Defines `FallbackStrategy` ABC and `@register_fallback` decorator.
 - `eis.py`, `gpb.py`, `rosatom.py`, `roseltorg.py` — Platform-specific extraction logic.
 

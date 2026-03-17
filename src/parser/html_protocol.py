@@ -35,16 +35,16 @@ from src.parser.participant_patterns import (
 from src.parser.table_analyzer import MultiProtocolAnalysis, ProtocolData
 from src.parser.pdf_parser import extract_participants_from_pdf, is_scan_pdf
 from src.scraper.browser import polite_wait, safe_goto
-from src.scraper.eis_fallback import fallback_get_protocol
-from src.scraper.gpb_fallback import (
+from src.scraper.fallbacks.eis import fallback_get_protocol
+from src.scraper.fallbacks.gpb import (
     download_protocol_from_gpb,
     get_protocol_links_from_gpb,
 )
-from src.scraper.rosatom_fallback import (
+from src.scraper.fallbacks.rosatom import (
     download_protocol_from_rosatom,
     get_protocol_links_from_rosatom,
 )
-from src.scraper.roseltorg_fallback import (
+from src.scraper.fallbacks.roseltorg import (
     download_protocol_from_roseltorg,
     get_protocol_links_from_roseltorg,
 )

@@ -18,6 +18,7 @@ from src.scraper.active_tenders import (
     search_active_tenders,
 )
 from src.scraper.unified_fallback import unified_fallback_extract_inn
+from src.scraper.fallbacks.eis import fallback_extract_inn
 from src.stages.params import PipelineParams
 from src.stages.report import run_active_report
 from src.utils.monitoring import StageStats, timed_operation

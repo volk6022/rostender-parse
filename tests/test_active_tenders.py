@@ -283,7 +283,7 @@ class TestExtractInnFromPage:
 
         assert result[0] == "1234567890"
         assert result[1] is not None
-        assert "EIS" in result[1]
+        assert "eis" in result[1]
 
     @pytest.mark.asyncio
     async def test_finds_inn_in_page_content_regex(self) -> None:
