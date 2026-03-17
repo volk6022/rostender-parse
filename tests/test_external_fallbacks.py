@@ -19,10 +19,10 @@ class TestGpbFallback:
         page.evaluate = AsyncMock(return_value="1234567890")
 
         with (
-            patch("src.scraper.gpb_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.gpb_fallback.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.gpb.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.gpb.polite_wait", new_callable=AsyncMock),
         ):
-            from src.scraper.gpb_fallback import extract_inn_from_gpb
+            from src.scraper.fallbacks.gpb import extract_inn_from_gpb
 
             result = await extract_inn_from_gpb(page, "https://new.etpgpb.ru/tender/1")
 
@@ -36,10 +36,10 @@ class TestGpbFallback:
         )
 
         with (
-            patch("src.scraper.gpb_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.gpb_fallback.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.gpb.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.gpb.polite_wait", new_callable=AsyncMock),
         ):
-            from src.scraper.gpb_fallback import get_protocol_links_from_gpb
+            from src.scraper.fallbacks.gpb import get_protocol_links_from_gpb
 
             result = await get_protocol_links_from_gpb(
                 page, "https://new.etpgpb.ru/tender/1"
@@ -72,10 +72,10 @@ class TestGpbFallback:
         page.expect_download = MagicMock(return_value=FakeEventInfo())
 
         with (
-            patch("src.scraper.gpb_fallback.DOWNLOADS_DIR", tmp_path),
-            patch("src.scraper.gpb_fallback.login_to_gpb", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.gpb.DOWNLOADS_DIR", tmp_path),
+            patch("src.scraper.fallbacks.gpb.login_to_gpb", new_callable=AsyncMock),
         ):
-            from src.scraper.gpb_fallback import download_protocol_from_gpb
+            from src.scraper.fallbacks.gpb import download_protocol_from_gpb
 
             result = await download_protocol_from_gpb(
                 page, "https://gpb.ru/proto", "T1", "INN1"
@@ -95,10 +95,10 @@ class TestRosatomFallback:
         page.evaluate = AsyncMock(return_value="7700000000")
 
         with (
-            patch("src.scraper.rosatom_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.rosatom_fallback.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.rosatom.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.rosatom.polite_wait", new_callable=AsyncMock),
         ):
-            from src.scraper.rosatom_fallback import extract_inn_from_rosatom
+            from src.scraper.fallbacks.rosatom import extract_inn_from_rosatom
 
             result = await extract_inn_from_rosatom(
                 page, "https://zakupki.rosatom.ru/1"
@@ -128,8 +128,8 @@ class TestRosatomFallback:
 
         page.expect_download = MagicMock(return_value=FakeEventInfo())
 
-        with patch("src.scraper.rosatom_fallback.DOWNLOADS_DIR", tmp_path):
-            from src.scraper.rosatom_fallback import download_protocol_from_rosatom
+        with patch("src.scraper.fallbacks.rosatom.DOWNLOADS_DIR", tmp_path):
+            from src.scraper.fallbacks.rosatom import download_protocol_from_rosatom
 
             result = await download_protocol_from_rosatom(
                 page, "https://rosatom.ru/p", "T1", "INN1"
@@ -149,10 +149,12 @@ class TestRoseltorgFallback:
         page.evaluate = AsyncMock(return_value="7711223344")
 
         with (
-            patch("src.scraper.roseltorg_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.roseltorg_fallback.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.roseltorg.safe_goto", new_callable=AsyncMock),
+            patch(
+                "src.scraper.fallbacks.roseltorg.polite_wait", new_callable=AsyncMock
+            ),
         ):
-            from src.scraper.roseltorg_fallback import extract_inn_from_roseltorg
+            from src.scraper.fallbacks.roseltorg import extract_inn_from_roseltorg
 
             result = await extract_inn_from_roseltorg(page, "https://roseltorg.ru/1")
 

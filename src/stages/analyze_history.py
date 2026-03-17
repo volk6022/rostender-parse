@@ -12,6 +12,7 @@ from src.db.repository import (
     update_customer_status,
 )
 from src.scraper.auth import ensure_logged_in
+from src.scraper.fallbacks.eis import search_historical_tenders_on_eis
 from src.stages._history_helpers import analyze_tender_history
 from src.stages.params import PipelineParams
 from src.utils.monitoring import StageStats

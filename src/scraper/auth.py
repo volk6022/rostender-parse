@@ -74,7 +74,10 @@ async def ensure_logged_in(page: Page) -> None:
 
 
 async def login_to_gpb(page: Page) -> bool:
-    """Авторизация на ETP GPB."""
+    """Авторизация на ETP GPB.
+
+    Поддерживает переход на id.etpgpb.ru (Единый Личный Кабинет).
+    """
     creds = get_credentials("gpb")
     if not creds:
         logger.debug("Учетные данные для GPB не настроены")
@@ -85,10 +88,73 @@ async def login_to_gpb(page: Page) -> bool:
 
     try:
         await safe_goto(page, login_url)
-        await page.fill("input[name='login'], #login", creds["login"])
-        await page.fill("input[name='password'], #password", creds["password"])
-        await page.click("button[type='submit'], .btn-primary")
+
+        # Проверяем, не залогинены ли мы уже
+        if await page.query_selector(
+            "a[href*='logout'], .user-menu, button:has-text('Выйти')"
+        ):
+            logger.debug("Уже авторизованы на GPB")
+            return True
+
+        # Если нас редиректнуло на выбор продуктов или форму логина ЕЛК
+        if "id.etpgpb.ru" in page.url:
+            # Если это страница выбора (products), нажимаем "Вход"
+            login_btn = await page.query_selector(
+                "a:has-text('Вход'), button:has-text('Вход')"
+            )
+            if login_btn:
+                await login_btn.click()
+                await page.wait_for_load_state("networkidle")
+
+        # Ждем появления полей ввода (они могут быть разными для старой и новой формы)
+        selectors = [
+            "input[name='login']",
+            "input[name='username']",
+            "#login",
+            "input[type='text']",
+        ]
+
+        input_found = False
+        for sel in selectors:
+            try:
+                await page.wait_for_selector(sel, timeout=5000)
+                await page.fill(sel, creds["login"])
+                input_found = True
+                break
+            except:
+                continue
+
+        if not input_found:
+            raise RuntimeError("Не удалось найти поле логина на GPB")
+
+        # Пароль
+        pw_selectors = ["input[name='password']", "#password", "input[type='password']"]
+        for sel in pw_selectors:
+            try:
+                await page.fill(sel, creds["password"])
+                break
+            except:
+                continue
+
+        # Клик по кнопке входа
+        submit_btn = await page.query_selector(
+            "button[type='submit'], .btn-primary, button:has-text('Войти')"
+        )
+        if submit_btn:
+            await submit_btn.click()
+        else:
+            await page.keyboard.press("Enter")
+
         await page.wait_for_load_state("networkidle")
+
+        # Финальная проверка
+        if "id.etpgpb.ru" in page.url or "login" in page.url:
+            # Проверяем наличие ошибок на странице
+            error = await page.query_selector(".error, .alert-danger, .error-message")
+            if error:
+                logger.error("Ошибка GPB: {}", await error.inner_text())
+                return False
+
         logger.success("Авторизация на ETP GPB выполнена")
         return True
     except Exception as e:

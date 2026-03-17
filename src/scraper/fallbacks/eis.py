@@ -1,36 +1,31 @@
-"""Фоллбэк на zakupki.gov.ru (ЕИС) для извлечения ИНН и протоколов.
-
-Используется когда:
-1. На rostender.info не удалось извлечь ИНН заказчика
-2. На rostender.info нет протокола — пробуем получить его с ЕИС
-"""
+"""EIS (zakupki.gov.ru) fallback strategy."""
 
 from __future__ import annotations
 
 import re
 from pathlib import Path
 from typing import Any
-
 from loguru import logger
 from playwright.async_api import Page
-
 from src.config import DOWNLOADS_DIR, MIN_PRICE_HISTORICAL
 from src.scraper.browser import polite_wait, safe_goto
+from src.scraper.fallbacks.base import FallbackStrategy, register_fallback
 
 EIS_BASE_URL = "https://zakupki.gov.ru"
 EIS_SEARCH_URL = f"{EIS_BASE_URL}/epz/order/extendedsearch/rss.html"
 
 
+@register_fallback("eis")
+class EISFallback(FallbackStrategy):
+    """Fallback strategy for zakupki.gov.ru (EIS)."""
+
+    async def extract_inn(self, page: Page, url: str) -> str | None:
+        """Extract INN from EIS page."""
+        return await extract_inn_from_eis(page, url)
+
+
 async def extract_inn_from_eis(page: Page, eis_url: str) -> str | None:
-    """Извлекает ИНН заказчика со страницы ЕИС.
-
-    Args:
-        page: Playwright-страница.
-        eis_url: URL тендера на zakupki.gov.ru.
-
-    Returns:
-        ИНН заказчика или None, если не найден.
-    """
+    """Извлекает ИНН заказчика со страницы ЕИС."""
     logger.info("Извлечение ИНН со страницы ЕИС: {}", eis_url)
 
     await safe_goto(page, eis_url)
@@ -76,23 +71,7 @@ async def search_historical_tenders_on_eis(
     *,
     limit: int = 5,
 ) -> list[dict[str, Any]]:
-    """Ищет завершённые тендеры заказчика на zakupki.gov.ru.
-
-    Args:
-        page: Playwright-страница.
-        customer_inn: ИНН заказчика.
-        limit: Максимальное число результатов.
-
-    Returns:
-        Список словарей с данными тендеров:
-        {
-            "tender_id": str,
-            "eis_url": str,
-            "title": str,
-            "price": float | None,
-            "publish_date": str | None,
-        }
-    """
+    """Ищет завершённые тендеры заказчика на zakupki.gov.ru."""
     logger.info("Поиск завершённых тендеров на ЕИС для ИНН {}", customer_inn)
 
     tenders: list[dict[str, Any]] = []
@@ -160,15 +139,7 @@ async def get_protocol_link_from_eis(
     page: Page,
     tender_eis_url: str,
 ) -> str | None:
-    """Находит ссылку на протокол тендера на странице ЕИС.
-
-    Args:
-        page: Playwright-страница.
-        tender_eis_url: URL тендера на zakupki.gov.ru.
-
-    Returns:
-        URL протокола или None.
-    """
+    """Находит ссылку на протокол тендера на странице ЕИС."""
     await safe_goto(page, tender_eis_url)
     await polite_wait()
 
@@ -193,17 +164,7 @@ async def download_protocol_from_eis(
     tender_id: str,
     customer_inn: str,
 ) -> Path | None:
-    """Скачивает файл протокола с ЕИС.
-
-    Args:
-        page: Playwright-страница.
-        protocol_url: URL для скачивания протокола.
-        tender_id: ID тендера.
-        customer_inn: ИНН заказчика.
-
-    Returns:
-        Путь к скачанному файлу или None.
-    """
+    """Скачивает файл протокола с ЕИС."""
     download_dir = DOWNLOADS_DIR / customer_inn / tender_id / "eis"
     download_dir.mkdir(parents=True, exist_ok=True)
 
@@ -233,10 +194,7 @@ async def download_protocol_from_eis(
 async def fallback_extract_inn(
     page: Page, tender_url: str
 ) -> tuple[str | None, str | None]:
-    """Извлекает ИНН, переходя по ссылке на ЕИС со страницы тендера.
-
-    Возвращает (inn, source_urls).
-    """
+    """Извлекает ИНН, переходя по ссылке на ЕИС со страницы тендера."""
     await safe_goto(page, tender_url)
     await polite_wait()
 
@@ -261,19 +219,7 @@ async def fallback_get_protocol(
     tender_id: str,
     customer_inn: str,
 ) -> Path | None:
-    """Фоллбэк для получения протокола с ЕИС.
-
-    Используется когда на rostender.info протокол не найден.
-
-    Args:
-        page: Playwright-страница.
-        tender_eis_url: URL тендера на zakupki.gov.ru.
-        tender_id: ID тендера.
-        customer_inn: ИНН заказчика.
-
-    Returns:
-        Путь к скачанному протоколу или None.
-    """
+    """Фоллбэк для получения протокола с ЕИС."""
     protocol_url = await get_protocol_link_from_eis(page, tender_eis_url)
     if not protocol_url:
         logger.debug("Протокол не найден на ЕИС")

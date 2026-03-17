@@ -4,11 +4,31 @@ from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+from src.scraper.fallbacks.eis import EISFallback
 
 import pytest
 
 
 # ── Tests for extract_inn_from_eis ───────────────────────────────────────────
+
+
+class TestEISFallback:
+    """Tests for EISFallback modular strategy."""
+
+    @pytest.mark.asyncio
+    async def test_modular_extract_inn_regex(self) -> None:
+        """Verify EISFallback.extract_inn uses same logic as legacy function."""
+        page = AsyncMock()
+        page.content = AsyncMock(return_value="<div>ИНН: 9990001112</div>")
+
+        with (
+            patch("src.scraper.fallbacks.eis.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.polite_wait", new_callable=AsyncMock),
+        ):
+            strategy = EISFallback()
+            result = await strategy.extract_inn(page, "https://eis/test")
+
+        assert result == "9990001112"
 
 
 class TestExtractInnFromEis:
@@ -21,10 +41,12 @@ class TestExtractInnFromEis:
         page.content = AsyncMock(return_value="<div>ИНН: 1234567890</div>")
 
         with (
-            patch("src.scraper.eis_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.eis_fallback.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.polite_wait", new_callable=AsyncMock),
         ):
-            from src.scraper.eis_fallback import extract_inn_from_eis
+            from src.scraper.fallbacks.eis import EISFallback
+
+            extract_inn_from_eis = EISFallback().extract_inn
 
             result = await extract_inn_from_eis(page, "https://zakupki.gov.ru/123")
 
@@ -37,10 +59,12 @@ class TestExtractInnFromEis:
         page.content = AsyncMock(return_value="<span>ИНН 123456789012</span>")
 
         with (
-            patch("src.scraper.eis_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.eis_fallback.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.polite_wait", new_callable=AsyncMock),
         ):
-            from src.scraper.eis_fallback import extract_inn_from_eis
+            from src.scraper.fallbacks.eis import EISFallback
+
+            extract_inn_from_eis = EISFallback().extract_inn
 
             result = await extract_inn_from_eis(page, "https://eis/test")
 
@@ -62,10 +86,12 @@ class TestExtractInnFromEis:
         )
 
         with (
-            patch("src.scraper.eis_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.eis_fallback.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.polite_wait", new_callable=AsyncMock),
         ):
-            from src.scraper.eis_fallback import extract_inn_from_eis
+            from src.scraper.fallbacks.eis import EISFallback
+
+            extract_inn_from_eis = EISFallback().extract_inn
 
             result = await extract_inn_from_eis(page, "https://eis/test")
 
@@ -90,10 +116,12 @@ class TestExtractInnFromEis:
         page.query_selector = AsyncMock(side_effect=mock_query_selector)
 
         with (
-            patch("src.scraper.eis_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.eis_fallback.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.polite_wait", new_callable=AsyncMock),
         ):
-            from src.scraper.eis_fallback import extract_inn_from_eis
+            from src.scraper.fallbacks.eis import EISFallback
+
+            extract_inn_from_eis = EISFallback().extract_inn
 
             result = await extract_inn_from_eis(page, "https://eis/test")
 
@@ -107,10 +135,12 @@ class TestExtractInnFromEis:
         page.query_selector = AsyncMock(return_value=None)
 
         with (
-            patch("src.scraper.eis_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.eis_fallback.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.polite_wait", new_callable=AsyncMock),
         ):
-            from src.scraper.eis_fallback import extract_inn_from_eis
+            from src.scraper.fallbacks.eis import EISFallback
+
+            extract_inn_from_eis = EISFallback().extract_inn
 
             result = await extract_inn_from_eis(page, "https://eis/test")
 
@@ -130,10 +160,10 @@ class TestSearchHistoricalTendersOnEis:
         page.query_selector = AsyncMock(return_value=None)
 
         with (
-            patch("src.scraper.eis_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.eis_fallback.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.polite_wait", new_callable=AsyncMock),
         ):
-            from src.scraper.eis_fallback import search_historical_tenders_on_eis
+            from src.scraper.fallbacks.eis import search_historical_tenders_on_eis
 
             result = await search_historical_tenders_on_eis(page, "1234567890")
 
@@ -173,11 +203,11 @@ class TestSearchHistoricalTendersOnEis:
         page.query_selector = AsyncMock(return_value=results_container)
 
         with (
-            patch("src.scraper.eis_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.eis_fallback.polite_wait", new_callable=AsyncMock),
-            patch("src.scraper.eis_fallback.MIN_PRICE_HISTORICAL", 1_000_000),
+            patch("src.scraper.fallbacks.eis.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.MIN_PRICE_HISTORICAL", 1_000_000),
         ):
-            from src.scraper.eis_fallback import search_historical_tenders_on_eis
+            from src.scraper.fallbacks.eis import search_historical_tenders_on_eis
 
             result = await search_historical_tenders_on_eis(page, "1234567890")
 
@@ -200,10 +230,10 @@ class TestSearchHistoricalTendersOnEis:
         page.query_selector = AsyncMock(return_value=results_container)
 
         with (
-            patch("src.scraper.eis_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.eis_fallback.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.polite_wait", new_callable=AsyncMock),
         ):
-            from src.scraper.eis_fallback import search_historical_tenders_on_eis
+            from src.scraper.fallbacks.eis import search_historical_tenders_on_eis
 
             result = await search_historical_tenders_on_eis(page, "1234567890")
 
@@ -242,11 +272,11 @@ class TestSearchHistoricalTendersOnEis:
         page.query_selector = AsyncMock(return_value=results_container)
 
         with (
-            patch("src.scraper.eis_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.eis_fallback.polite_wait", new_callable=AsyncMock),
-            patch("src.scraper.eis_fallback.MIN_PRICE_HISTORICAL", 1_000_000),
+            patch("src.scraper.fallbacks.eis.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.MIN_PRICE_HISTORICAL", 1_000_000),
         ):
-            from src.scraper.eis_fallback import search_historical_tenders_on_eis
+            from src.scraper.fallbacks.eis import search_historical_tenders_on_eis
 
             result = await search_historical_tenders_on_eis(page, "1234567890")
 
@@ -281,10 +311,10 @@ class TestSearchHistoricalTendersOnEis:
         page.query_selector = AsyncMock(return_value=results_container)
 
         with (
-            patch("src.scraper.eis_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.eis_fallback.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.polite_wait", new_callable=AsyncMock),
         ):
-            from src.scraper.eis_fallback import search_historical_tenders_on_eis
+            from src.scraper.fallbacks.eis import search_historical_tenders_on_eis
 
             result = await search_historical_tenders_on_eis(page, "1234567890", limit=3)
 
@@ -322,10 +352,10 @@ class TestSearchHistoricalTendersOnEis:
         page.query_selector = AsyncMock(return_value=results_container)
 
         with (
-            patch("src.scraper.eis_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.eis_fallback.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.polite_wait", new_callable=AsyncMock),
         ):
-            from src.scraper.eis_fallback import search_historical_tenders_on_eis
+            from src.scraper.fallbacks.eis import search_historical_tenders_on_eis
 
             result = await search_historical_tenders_on_eis(page, "1234567890")
 
@@ -360,10 +390,10 @@ class TestSearchHistoricalTendersOnEis:
         page.query_selector = AsyncMock(return_value=results_container)
 
         with (
-            patch("src.scraper.eis_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.eis_fallback.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.polite_wait", new_callable=AsyncMock),
         ):
-            from src.scraper.eis_fallback import search_historical_tenders_on_eis
+            from src.scraper.fallbacks.eis import search_historical_tenders_on_eis
 
             result = await search_historical_tenders_on_eis(page, "1234567890")
 
@@ -387,10 +417,10 @@ class TestGetProtocolLinkFromEis:
         page.query_selector_all = AsyncMock(return_value=[link])
 
         with (
-            patch("src.scraper.eis_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.eis_fallback.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.polite_wait", new_callable=AsyncMock),
         ):
-            from src.scraper.eis_fallback import get_protocol_link_from_eis
+            from src.scraper.fallbacks.eis import get_protocol_link_from_eis
 
             result = await get_protocol_link_from_eis(page, "https://eis/tender")
 
@@ -407,10 +437,10 @@ class TestGetProtocolLinkFromEis:
         page.query_selector_all = AsyncMock(return_value=[link])
 
         with (
-            patch("src.scraper.eis_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.eis_fallback.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.polite_wait", new_callable=AsyncMock),
         ):
-            from src.scraper.eis_fallback import get_protocol_link_from_eis
+            from src.scraper.fallbacks.eis import get_protocol_link_from_eis
 
             result = await get_protocol_link_from_eis(page, "https://eis/tender")
 
@@ -423,10 +453,10 @@ class TestGetProtocolLinkFromEis:
         page.query_selector_all = AsyncMock(return_value=[])
 
         with (
-            patch("src.scraper.eis_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.eis_fallback.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.polite_wait", new_callable=AsyncMock),
         ):
-            from src.scraper.eis_fallback import get_protocol_link_from_eis
+            from src.scraper.fallbacks.eis import get_protocol_link_from_eis
 
             result = await get_protocol_link_from_eis(page, "https://eis/tender")
 
@@ -443,10 +473,10 @@ class TestGetProtocolLinkFromEis:
         page.query_selector_all = AsyncMock(return_value=[link])
 
         with (
-            patch("src.scraper.eis_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.eis_fallback.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.polite_wait", new_callable=AsyncMock),
         ):
-            from src.scraper.eis_fallback import get_protocol_link_from_eis
+            from src.scraper.fallbacks.eis import get_protocol_link_from_eis
 
             result = await get_protocol_link_from_eis(page, "https://eis/tender")
 
@@ -463,10 +493,10 @@ class TestGetProtocolLinkFromEis:
         page.query_selector_all = AsyncMock(return_value=[link])
 
         with (
-            patch("src.scraper.eis_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.eis_fallback.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.polite_wait", new_callable=AsyncMock),
         ):
-            from src.scraper.eis_fallback import get_protocol_link_from_eis
+            from src.scraper.fallbacks.eis import get_protocol_link_from_eis
 
             result = await get_protocol_link_from_eis(page, "https://eis/tender")
 
@@ -506,8 +536,8 @@ class TestDownloadProtocolFromEis:
 
         expected_dir = tmp_path / "1234567890" / "tender1" / "eis"
 
-        with patch("src.scraper.eis_fallback.DOWNLOADS_DIR", tmp_path):
-            from src.scraper.eis_fallback import download_protocol_from_eis
+        with patch("src.scraper.fallbacks.eis.DOWNLOADS_DIR", tmp_path):
+            from src.scraper.fallbacks.eis import download_protocol_from_eis
 
             # Create the file so stat() works
             expected_dir.mkdir(parents=True, exist_ok=True)
@@ -526,8 +556,8 @@ class TestDownloadProtocolFromEis:
         page = AsyncMock()
         page.expect_download = MagicMock(side_effect=Exception("download error"))
 
-        with patch("src.scraper.eis_fallback.DOWNLOADS_DIR", tmp_path):
-            from src.scraper.eis_fallback import download_protocol_from_eis
+        with patch("src.scraper.fallbacks.eis.DOWNLOADS_DIR", tmp_path):
+            from src.scraper.fallbacks.eis import download_protocol_from_eis
 
             result = await download_protocol_from_eis(
                 page, "https://eis/protocol", "tender1", "1234567890"
@@ -555,15 +585,15 @@ class TestFallbackExtractInn:
         page.query_selector = AsyncMock(return_value=eis_link_el)
 
         with (
-            patch("src.scraper.eis_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.eis_fallback.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.polite_wait", new_callable=AsyncMock),
             patch(
-                "src.scraper.eis_fallback.extract_inn_from_eis",
+                "src.scraper.fallbacks.eis.extract_inn_from_eis",
                 new_callable=AsyncMock,
                 return_value="1112223334",
             ) as mock_extract,
         ):
-            from src.scraper.eis_fallback import fallback_extract_inn
+            from src.scraper.fallbacks.eis import fallback_extract_inn
 
             result = await fallback_extract_inn(page, "https://rostender.info/t/1")
 
@@ -577,10 +607,10 @@ class TestFallbackExtractInn:
         page.query_selector = AsyncMock(return_value=None)
 
         with (
-            patch("src.scraper.eis_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.eis_fallback.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.polite_wait", new_callable=AsyncMock),
         ):
-            from src.scraper.eis_fallback import fallback_extract_inn
+            from src.scraper.fallbacks.eis import fallback_extract_inn
 
             result = await fallback_extract_inn(page, "https://rostender.info/t/1")
 
@@ -597,10 +627,10 @@ class TestFallbackExtractInn:
         page.query_selector = AsyncMock(return_value=eis_link_el)
 
         with (
-            patch("src.scraper.eis_fallback.safe_goto", new_callable=AsyncMock),
-            patch("src.scraper.eis_fallback.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.safe_goto", new_callable=AsyncMock),
+            patch("src.scraper.fallbacks.eis.polite_wait", new_callable=AsyncMock),
         ):
-            from src.scraper.eis_fallback import fallback_extract_inn
+            from src.scraper.fallbacks.eis import fallback_extract_inn
 
             result = await fallback_extract_inn(page, "https://rostender.info/t/1")
 
@@ -621,17 +651,17 @@ class TestFallbackGetProtocol:
 
         with (
             patch(
-                "src.scraper.eis_fallback.get_protocol_link_from_eis",
+                "src.scraper.fallbacks.eis.get_protocol_link_from_eis",
                 new_callable=AsyncMock,
                 return_value="https://eis/protocol/dl",
             ),
             patch(
-                "src.scraper.eis_fallback.download_protocol_from_eis",
+                "src.scraper.fallbacks.eis.download_protocol_from_eis",
                 new_callable=AsyncMock,
                 return_value=expected_path,
             ) as mock_download,
         ):
-            from src.scraper.eis_fallback import fallback_get_protocol
+            from src.scraper.fallbacks.eis import fallback_get_protocol
 
             result = await fallback_get_protocol(
                 page, "https://eis/tender/1", "tid", "inn"
@@ -648,11 +678,11 @@ class TestFallbackGetProtocol:
         page = AsyncMock()
 
         with patch(
-            "src.scraper.eis_fallback.get_protocol_link_from_eis",
+            "src.scraper.fallbacks.eis.get_protocol_link_from_eis",
             new_callable=AsyncMock,
             return_value=None,
         ):
-            from src.scraper.eis_fallback import fallback_get_protocol
+            from src.scraper.fallbacks.eis import fallback_get_protocol
 
             result = await fallback_get_protocol(
                 page, "https://eis/tender/1", "tid", "inn"
