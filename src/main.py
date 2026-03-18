@@ -15,7 +15,16 @@ from src.config import (
     ConfigError,
     validate_config,
 )
-from src.db.repository import init_db
+from src.db.repository import (
+    init_db,
+    create_run_session,
+    update_run_session_status,
+    archive_old_data,
+    clean_db,
+    unarchive_tenders,
+    get_connection,
+)
+from src.utils.session import generate_session_id
 from src.scraper.auth import login
 from src.scraper.browser import create_browser, create_page
 from src.stages.analyze_history import run_analyze_history
@@ -219,6 +228,27 @@ def _parse_args() -> argparse.Namespace:
     )
     _add_common_args(s_active)
 
+    # clean-db — Очистка базы данных
+    subparsers.add_parser(
+        "clean-db",
+        help="Полная очистка базы данных (включая архивы)",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+
+    # unarchive-tenders — Восстановление тендеров из архива
+    unarchive_parser = subparsers.add_parser(
+        "unarchive-tenders",
+        help="Восстановить тендеры из архива в основную таблицу",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    unarchive_parser.add_argument(
+        "--session-id",
+        "-s",
+        type=str,
+        default=None,
+        help="ID сессии для восстановленных записей (если не указан — будет сгенерирован)",
+    )
+
     args = parser.parse_args()
 
     # Если субкоманда не указана — полный pipeline
@@ -237,13 +267,26 @@ def _parse_args() -> argparse.Namespace:
 async def run() -> None:
     """Главный асинхронный dispatcher."""
     args = _parse_args()
-    params = PipelineParams.from_args(args)
-    command = args.command
 
     _configure_logging()
     _ensure_dirs()
 
-    logger.info("=== Rostender Parser запущен ===")
+    if args.command == "clean-db":
+        async with get_connection() as conn:
+            await clean_db(conn)
+        return
+
+    if args.command == "unarchive-tenders":
+        async with get_connection() as conn:
+            count = await unarchive_tenders(conn, session_id=args.session_id)
+            print(f"Восстановлено тендеров: {count}")
+        return
+
+    session_id = generate_session_id()
+    params = PipelineParams.from_args(args, session_id=session_id)
+    command = args.command
+
+    logger.info("=== Rostender Parser запущен | Session: {} ===", session_id)
     logger.info(
         "Команда: {}, keywords={}, exclude={}, min_price={}, history_limit={}, "
         "max_participants={}, ratio_threshold={}, formats={}, date={}-{}",
@@ -266,40 +309,60 @@ async def run() -> None:
     # Валидация конфигурации (бросит ConfigError если config.yaml не в порядке)
     validate_config()
 
-    # Инициализация БД
+    # Инициализация БД и архивация
     await init_db()
+    async with get_connection() as conn:
+        await create_run_session(conn, session_id, command_args=" ".join(sys.argv[1:]))
+        await archive_old_data(conn)
+        await conn.commit()
 
-    if command == "run":
-        # Полный pipeline: один браузер, одна сессия, все этапы
-        async with create_browser(headless=params.headless) as browser:
-            async with create_page(browser) as page:
-                await login(page)
-                await run_search_active(page, params)
-                await run_analyze_history(page, params)
-                await run_extended_search(page, params)
-        await run_report(params)
+    status = "success"
+    error_info = None
 
-    elif command == "report":
-        # Отчёт: браузер не нужен
-        await run_report(params)
-
-    elif command == "report-active":
-        # Отчёт по активным: браузер не нужен
-        await run_active_report(params)
-
-    elif command in ("search-active", "analyze-history", "extended-search"):
-        # Отдельный этап: собственная браузерная сессия
-        async with create_browser(headless=params.headless) as browser:
-            async with create_page(browser) as page:
-                await login(page)
-                if command == "search-active":
+    try:
+        if command == "run":
+            # Полный pipeline: один браузер, одна сессия, все этапы
+            async with create_browser(headless=params.headless) as browser:
+                async with create_page(browser) as page:
+                    await login(page)
                     await run_search_active(page, params)
-                elif command == "analyze-history":
                     await run_analyze_history(page, params)
-                elif command == "extended-search":
                     await run_extended_search(page, params)
+            await run_report(params)
 
-    logger.info("=== Rostender Parser завершён ===")
+        elif command == "report":
+            # Отчёт: браузер не нужен
+            await run_report(params)
+
+        elif command == "report-active":
+            # Отчёт по активным: браузер не нужен
+            await run_active_report(params)
+
+        elif command in ("search-active", "analyze-history", "extended-search"):
+            # Отдельный этап: собственная браузерная сессия
+            async with create_browser(headless=params.headless) as browser:
+                async with create_page(browser) as page:
+                    await login(page)
+                    if command == "search-active":
+                        await run_search_active(page, params)
+                    elif command == "analyze-history":
+                        await run_analyze_history(page, params)
+                    elif command == "extended-search":
+                        await run_extended_search(page, params)
+    except asyncio.CancelledError:
+        status = "interrupted"
+        logger.warning("Работа прервана пользователем")
+        raise
+    except Exception as e:
+        status = "failed"
+        error_info = str(e)
+        logger.exception("Критическая ошибка выполнения")
+        raise
+    finally:
+        async with get_connection() as conn:
+            await update_run_session_status(conn, session_id, status, error_info)
+            await conn.commit()
+        logger.info("=== Rostender Parser завершён | Status: {} ===", status)
 
 
 def main() -> None:

@@ -42,6 +42,144 @@ async def init_db() -> None:
         logger.info("БД инициализирована: {}", DB_PATH)
 
 
+# ── Sessions ────────────────────────────────────────────────────────────────────
+
+
+async def create_run_session(
+    conn: aiosqlite.Connection,
+    session_id: str,
+    command_args: str | None = None,
+) -> None:
+    """Создать новую сессию выполнения."""
+    await conn.execute(
+        "INSERT INTO run_sessions (session_id, status, command_args) VALUES (?, ?, ?)",
+        (session_id, "running", command_args),
+    )
+
+
+async def update_run_session_status(
+    conn: aiosqlite.Connection,
+    session_id: str,
+    status: str,
+    error_info: str | None = None,
+) -> None:
+    """Обновить статус сессии."""
+    await conn.execute(
+        "UPDATE run_sessions SET status = ?, error_info = ?, end_time = CURRENT_TIMESTAMP WHERE session_id = ?",
+        (status, error_info, session_id),
+    )
+
+
+async def archive_old_data(conn: aiosqlite.Connection) -> None:
+    """Переместить текущие данные в архив перед новым запуском."""
+    logger.info("Архивация старых данных...")
+
+    await conn.execute("DELETE FROM results")
+    await conn.execute("DELETE FROM protocol_analysis")
+
+    # Тендеры
+    await conn.execute(
+        """
+        INSERT INTO tenders_archive (
+            tender_id, customer_inn, url, source_urls,
+            title, price, publish_date, tender_status, created_at
+        )
+        SELECT
+            tender_id, customer_inn, url, source_urls,
+            title, price, publish_date, tender_status, created_at
+        FROM tenders
+    """
+    )
+    await conn.execute("DELETE FROM tenders")
+
+    # Заказчики
+    await conn.execute(
+        """
+        INSERT INTO customers_archive (
+            inn, name, status, last_analysis_date, created_at
+        )
+        SELECT
+            inn, name, status, last_analysis_date, created_at
+        FROM customers
+    """
+    )
+    await conn.execute("DELETE FROM customers")
+
+    logger.info("Архивация завершена.")
+
+
+async def clean_db(conn: aiosqlite.Connection) -> None:
+    """Полная очистка базы данных (включая архивы)."""
+    logger.warning("Полная очистка БД...")
+    await conn.execute("DELETE FROM results")
+    await conn.execute("DELETE FROM protocol_analysis")
+    await conn.execute("DELETE FROM tenders")
+    await conn.execute("DELETE FROM tenders_archive")
+    await conn.execute("DELETE FROM customers")
+    await conn.execute("DELETE FROM customers_archive")
+    await conn.execute("DELETE FROM run_sessions")
+    await conn.commit()
+    logger.info("БД очищена.")
+
+
+async def unarchive_tenders(
+    conn: aiosqlite.Connection,
+    session_id: str | None = None,
+) -> int:
+    """Восстановить тендеры и заказчиков из архива в основные таблицы."""
+    from src.utils.session import generate_session_id
+
+    if session_id is None:
+        session_id = generate_session_id()
+
+    cursor = await conn.execute("SELECT COUNT(*) FROM tenders_archive")
+    row = await cursor.fetchone()
+    count = row[0] if row else 0
+
+    if count == 0:
+        logger.info("Нет тендеров в архиве для восстановления.")
+        return 0
+
+    logger.info("Восстановление {} тендеров из архива...", count)
+
+    await conn.execute(
+        "INSERT INTO run_sessions (session_id, status, command_args) VALUES (?, 'success', 'unarchive')",
+        (session_id,),
+    )
+
+    await conn.execute(
+        """
+        INSERT INTO customers (
+            inn, session_id, name, status, last_analysis_date, created_at
+        )
+        SELECT
+            inn, ?, name, status, last_analysis_date, created_at
+        FROM customers_archive
+    """,
+        (session_id,),
+    )
+
+    await conn.execute(
+        """
+        INSERT INTO tenders (
+            tender_id, session_id, customer_inn, url, source_urls,
+            title, price, publish_date, tender_status, created_at
+        )
+        SELECT
+            tender_id, ?, customer_inn, url, source_urls,
+            title, price, publish_date, tender_status, created_at
+        FROM tenders_archive
+    """,
+        (session_id,),
+    )
+    await conn.execute("DELETE FROM tenders_archive")
+    await conn.execute("DELETE FROM customers_archive")
+    await conn.commit()
+
+    logger.info("Восстановлено {} тендеров и заказчиков. Архив очищен.", count)
+    return count
+
+
 # ── Customers ───────────────────────────────────────────────────────────────────
 
 
@@ -49,9 +187,12 @@ async def upsert_customer(
     conn: aiosqlite.Connection,
     inn: str,
     name: str | None = None,
+    session_id: str | None = None,
 ) -> None:
     """Вставить или обновить заказчика."""
-    await upsert_customers_batch(conn, [{"inn": inn, "name": name}])
+    await upsert_customers_batch(
+        conn, [{"inn": inn, "name": name, "session_id": session_id}]
+    )
 
 
 async def upsert_customers_batch(
@@ -62,14 +203,15 @@ async def upsert_customers_batch(
     if not customers:
         return
 
-    values = [(c["inn"], c.get("name")) for c in customers]
+    values = [(c["inn"], c.get("name"), c.get("session_id")) for c in customers]
 
     await conn.executemany(
         """
-        INSERT INTO customers (inn, name)
-        VALUES (?, ?)
+        INSERT INTO customers (inn, name, session_id)
+        VALUES (?, ?, ?)
         ON CONFLICT(inn) DO UPDATE SET
-            name = COALESCE(excluded.name, customers.name)
+            name = COALESCE(excluded.name, customers.name),
+            session_id = COALESCE(excluded.session_id, customers.session_id)
         """,
         values,
     )
@@ -107,6 +249,7 @@ async def upsert_tender(
     *,
     tender_id: str,
     customer_inn: str,
+    session_id: str | None = None,
     url: str | None = None,
     source_urls: str | None = None,
     title: str | None = None,
@@ -121,6 +264,7 @@ async def upsert_tender(
             {
                 "tender_id": tender_id,
                 "customer_inn": customer_inn,
+                "session_id": session_id,
                 "url": url,
                 "source_urls": source_urls,
                 "title": title,
@@ -144,6 +288,7 @@ async def upsert_tenders_batch(
         (
             t["tender_id"],
             t["customer_inn"],
+            t.get("session_id"),
             t.get("url"),
             t.get("source_urls"),
             t.get("title"),
@@ -156,9 +301,13 @@ async def upsert_tenders_batch(
 
     await conn.executemany(
         """
-        INSERT INTO tenders (tender_id, customer_inn, url, source_urls, title, price, publish_date, tender_status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO tenders (
+            tender_id, customer_inn, session_id, url, source_urls, 
+            title, price, publish_date, tender_status
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(tender_id) DO UPDATE SET
+            session_id    = COALESCE(excluded.session_id, tenders.session_id),
             url           = COALESCE(excluded.url, tenders.url),
             source_urls   = COALESCE(excluded.source_urls, tenders.source_urls),
             title         = COALESCE(excluded.title, tenders.title),
@@ -221,6 +370,7 @@ async def upsert_protocol_analysis(
     conn: aiosqlite.Connection,
     *,
     tender_id: str,
+    session_id: str | None = None,
     participants_count: int | None = None,
     parse_source: str | None = None,
     parse_status: str,
@@ -232,6 +382,7 @@ async def upsert_protocol_analysis(
 
     Args:
         tender_id: ID тендера
+        session_id: ID сессии
         participants_count: Количество участников (None если не определено)
         parse_source: Источник парсинга (html|docx|pdf_text|deduplicated и т.д.)
         parse_status: Статус (success|failed|deduplicated и т.д.)
@@ -241,9 +392,13 @@ async def upsert_protocol_analysis(
     """
     await conn.execute(
         """
-        INSERT INTO protocol_analysis (tender_id, tender_protocol_index, participants_count, parse_source, parse_status, doc_path, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO protocol_analysis (
+            tender_id, session_id, tender_protocol_index, 
+            participants_count, parse_source, parse_status, doc_path, notes
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(tender_id, tender_protocol_index) DO UPDATE SET
+            session_id         = COALESCE(excluded.session_id, protocol_analysis.session_id),
             participants_count = excluded.participants_count,
             parse_source       = excluded.parse_source,
             parse_status       = excluded.parse_status,
@@ -253,6 +408,7 @@ async def upsert_protocol_analysis(
         """,
         (
             tender_id,
+            session_id,
             tender_protocol_index,
             participants_count,
             parse_source,
@@ -267,15 +423,7 @@ async def get_protocol_analyses_for_tender(
     conn: aiosqlite.Connection,
     tender_id: str,
 ) -> Sequence[Any]:
-    """Получить все протоколы для конкретного tender_id.
-
-    Возвращает все записи protocol_analysis для данного tender_id
-    упорядоченные по tender_protocol_index для последовательного анализа.
-
-    Returns:
-        Список словарей с полями: id, tender_id, tender_protocol_index,
-        doc_path, parse_status, analyzed_at
-    """
+    """Получить все протоколы для конкретного tender_id."""
     cursor = await conn.execute(
         """
         SELECT id, tender_id, tender_protocol_index, doc_path, parse_status, analyzed_at
@@ -313,6 +461,7 @@ async def insert_result(
     *,
     active_tender_id: str,
     customer_inn: str,
+    session_id: str | None = None,
     total_historical: int,
     total_analyzed: int,
     total_skipped: int,
@@ -325,15 +474,16 @@ async def insert_result(
     await conn.execute(
         """
         INSERT INTO results (
-            active_tender_id, customer_inn,
+            active_tender_id, customer_inn, session_id,
             total_historical, total_analyzed, total_skipped,
             low_competition_count, competition_ratio,
             is_interesting, source
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             active_tender_id,
             customer_inn,
+            session_id,
             total_historical,
             total_analyzed,
             total_skipped,
@@ -345,10 +495,12 @@ async def insert_result(
     )
 
 
-async def get_interesting_results(conn: aiosqlite.Connection) -> Sequence[Any]:
+async def get_interesting_results(
+    conn: aiosqlite.Connection,
+    session_id: str | None = None,
+) -> Sequence[Any]:
     """Получить все интересные результаты с данными тендеров и заказчиков."""
-    cursor = await conn.execute(
-        """
+    query = """
         SELECT
             r.*,
             t.title   AS tender_title,
@@ -359,9 +511,15 @@ async def get_interesting_results(conn: aiosqlite.Connection) -> Sequence[Any]:
         JOIN tenders   t ON r.active_tender_id = t.tender_id
         JOIN customers c ON r.customer_inn     = c.inn
         WHERE r.is_interesting = 1
-        ORDER BY r.competition_ratio DESC
-        """
-    )
+    """
+    params = []
+    if session_id:
+        query += " AND r.session_id = ?"
+        params.append(session_id)
+
+    query += " ORDER BY r.competition_ratio DESC"
+
+    cursor = await conn.execute(query, params)
     return list(await cursor.fetchall())
 
 
@@ -452,20 +610,14 @@ async def save_protocol_analysis_result(
     conn: aiosqlite.Connection,
     *,
     tender_id: str,
+    session_id: str | None = None,
     participants_count: int | None,
     parse_source: str,
     parse_status: str,
     doc_path: str | None = None,
     notes: str | None = None,
 ) -> None:
-    """Сохранить итоговый/де-дуплицированный результат для tender_id.
-
-    Де-дуплицированный результат (tender_protocol_index=NULL) перезаписывает
-    предыдущие записи для этого tender_id.
-
-    Если результат уже есть с таким же количеством участников — пропускаем
-    (для избежания дублей в результатах).
-    """
+    """Сохранить итоговый/де-дуплицированный результат для tender_id."""
     # Проверяем, есть ли уже результат с таким же количеством
     existing = await conn.execute(
         """
@@ -479,23 +631,18 @@ async def save_protocol_analysis_result(
     row = await existing.fetchone()
 
     if row is not None:
-        # Результат уже сохранён — пропускаем
-        logger.debug(
-            "Результат для tender_id {} уже существует (count={}). Пропускаю.",
-            tender_id,
-            participants_count,
-        )
         return
 
     await upsert_protocol_analysis(
         conn,
         tender_id=tender_id,
+        session_id=session_id,
         participants_count=participants_count,
         parse_source=parse_source,
         parse_status=parse_status,
         doc_path=doc_path,
         notes=notes,
-        tender_protocol_index=None,  # NULL для де-дуплицированного результата
+        tender_protocol_index=None,
     )
 
 
@@ -523,10 +670,12 @@ async def get_all_customers(conn: aiosqlite.Connection) -> Sequence[Any]:
     return list(await cursor.fetchall())
 
 
-async def get_all_results(conn: aiosqlite.Connection) -> Sequence[Any]:
+async def get_all_results(
+    conn: aiosqlite.Connection,
+    session_id: str | None = None,
+) -> Sequence[Any]:
     """Получить все результаты с данными тендеров и заказчиков."""
-    cursor = await conn.execute(
-        """
+    query = """
         SELECT
             r.*,
             t.title   AS tender_title,
@@ -536,16 +685,24 @@ async def get_all_results(conn: aiosqlite.Connection) -> Sequence[Any]:
         FROM results r
         JOIN tenders   t ON r.active_tender_id = t.tender_id
         JOIN customers c ON r.customer_inn     = c.inn
-        ORDER BY r.is_interesting DESC, r.competition_ratio DESC
-        """
-    )
+    """
+    params = []
+    if session_id:
+        query += " WHERE r.session_id = ?"
+        params.append(session_id)
+
+    query += " ORDER BY r.is_interesting DESC, r.competition_ratio DESC"
+
+    cursor = await conn.execute(query, params)
     return list(await cursor.fetchall())
 
 
-async def get_all_protocol_analyses(conn: aiosqlite.Connection) -> Sequence[Any]:
+async def get_all_protocol_analyses(
+    conn: aiosqlite.Connection,
+    session_id: str | None = None,
+) -> Sequence[Any]:
     """Получить все результаты анализа протоколов с данными тендеров."""
-    cursor = await conn.execute(
-        """
+    query = """
         SELECT
             pa.*,
             t.title        AS tender_title,
@@ -553,7 +710,13 @@ async def get_all_protocol_analyses(conn: aiosqlite.Connection) -> Sequence[Any]
             t.tender_status AS tender_status
         FROM protocol_analysis pa
         JOIN tenders t ON pa.tender_id = t.tender_id
-        ORDER BY pa.analyzed_at DESC
-        """
-    )
+    """
+    params = []
+    if session_id:
+        query += " WHERE pa.session_id = ?"
+        params.append(session_id)
+
+    query += " ORDER BY pa.analyzed_at DESC"
+
+    cursor = await conn.execute(query, params)
     return list(await cursor.fetchall())

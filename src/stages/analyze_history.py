@@ -88,7 +88,9 @@ async def run_analyze_history(page: Page, params: PipelineParams) -> None:
                 await conn.commit()
                 consecutive_errors = 0
                 stats.add(success=True)
-                logger.success(f"Заказчик {inn}: анализ завершён")
+                logger.success(
+                    f"Заказчик {inn}: анализ завершён (Session: {params.session_id})"
+                )
 
             except Exception as exc:
                 consecutive_errors += 1

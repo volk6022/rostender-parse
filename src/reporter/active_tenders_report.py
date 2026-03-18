@@ -15,7 +15,11 @@ from src.config import REPORTS_DIR
 from src.reporter.excel_report import HEADER_FILL, HEADER_FONT, _format_price
 
 
-def generate_active_tenders_report(tenders: Sequence[Any]) -> Path | None:
+def generate_active_tenders_report(
+    tenders: Sequence[Any],
+    session_id: str | None = None,
+    stage: str | None = None,
+) -> Path | None:
     """Сгенерировать Excel со списком активных тендеров."""
     if not tenders:
         logger.warning("Нет активных тендеров для генерации отчёта")
@@ -62,12 +66,29 @@ def generate_active_tenders_report(tenders: Sequence[Any]) -> Path | None:
                 max_length = max(max_length, len(str(cell.value)))
         ws.column_dimensions[column].width = min(max_length + 2, 60)
 
-    timestamp = datetime.now().strftime("%Y-%m-%d")
-    filename = f"active_tenders_{timestamp}.xlsx"
-    filepath = REPORTS_DIR / filename
-
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    wb.save(filepath)
+
+    # Формируем уникальное имя файла
+    if session_id:
+        base = f"report_{session_id}"
+        if stage:
+            base += f"_{stage}"
+        base += ".xlsx"
+    else:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        base = f"active_tenders_{timestamp}.xlsx"
+
+    filepath = REPORTS_DIR / base
+
+    # Атомарная запись
+    tmp_filepath = REPORTS_DIR / f"{base}.tmp"
+    try:
+        wb.save(tmp_filepath)
+        tmp_filepath.replace(filepath)
+    except Exception:
+        if tmp_filepath.exists():
+            tmp_filepath.unlink()
+        raise
 
     logger.success("Отчёт по активным тендерам сохранён: {}", filepath)
     return filepath

@@ -25,6 +25,7 @@ from src.config import (
 class PipelineParams:
     """Неизменяемый набор параметров, общий для всех этапов pipeline."""
 
+    session_id: str
     keywords: list[str]
     exclude_keywords: list[str]
     min_price_active: int
@@ -41,7 +42,7 @@ class PipelineParams:
     # ── Фабрика ──────────────────────────────────────────────────────────────
 
     @staticmethod
-    def from_args(args: argparse.Namespace) -> PipelineParams:
+    def from_args(args: argparse.Namespace, session_id: str) -> PipelineParams:
         """Создаёт PipelineParams, объединяя CLI-аргументы и дефолты из config.yaml."""
 
         keywords = args.keywords if args.keywords else DEFAULT_KEYWORDS
@@ -85,6 +86,7 @@ class PipelineParams:
         headless = getattr(args, "headless", True)
 
         return PipelineParams(
+            session_id=session_id,
             keywords=keywords,
             exclude_keywords=exclude_keywords,
             min_price_active=min_price_active,

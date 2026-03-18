@@ -121,65 +121,14 @@ def sample_protocol_texts() -> dict[str, str]:
 
 @pytest.fixture
 async def test_db() -> AsyncGenerator[aiosqlite.Connection, None]:
-    """Создаёт временную in-memory БД для тестирования."""
+    """Создаёт временную in-memory БД для тестирования с актуальной схемой."""
+    from src.db.schema import SCHEMA_SQL
+
     test_db_path = Path(":memory:")
     conn = await aiosqlite.connect(str(test_db_path))
     conn.row_factory = aiosqlite.Row
 
-    schema = """
-    CREATE TABLE IF NOT EXISTS customers (
-        inn TEXT PRIMARY KEY,
-        name TEXT,
-        status TEXT DEFAULT 'new',
-        last_analysis_date DATETIME,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS tenders (
-        tender_id TEXT PRIMARY KEY,
-        customer_inn TEXT NOT NULL,
-        url TEXT,
-        source_urls TEXT,
-        title TEXT,
-        price REAL,
-        publish_date DATETIME,
-        tender_status TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(customer_inn) REFERENCES customers(inn)
-    );
-
-
-    CREATE TABLE IF NOT EXISTS protocol_analysis (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        tender_id TEXT NOT NULL,
-        tender_protocol_index INTEGER,
-        participants_count INTEGER,
-        parse_source TEXT,
-        parse_status TEXT NOT NULL,
-        doc_path TEXT,
-        notes TEXT,
-        analyzed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(tender_id, tender_protocol_index),
-        FOREIGN KEY(tender_id) REFERENCES tenders(tender_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS results (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        active_tender_id TEXT NOT NULL,
-        customer_inn TEXT NOT NULL,
-        total_historical INTEGER,
-        total_analyzed INTEGER,
-        total_skipped INTEGER,
-        low_competition_count INTEGER,
-        competition_ratio REAL,
-        is_interesting BOOLEAN DEFAULT 0,
-        source TEXT DEFAULT 'primary',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(active_tender_id) REFERENCES tenders(tender_id),
-        FOREIGN KEY(customer_inn) REFERENCES customers(inn)
-    );
-    """
-    await conn.executescript(schema)
+    await conn.executescript(SCHEMA_SQL)
     await conn.commit()
 
     yield conn

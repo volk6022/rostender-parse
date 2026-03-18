@@ -1,32 +1,40 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!--
+Sync Impact Report:
+- Version change: [CONSTITUTION_VERSION] → 1.0.0
+- List of modified principles:
+  - [PRINCIPLE_1_NAME] → I. Modular Scraper-First
+  - [PRINCIPLE_2_NAME] → II. Database-Centric Pipeline
+  - [PRINCIPLE_3_NAME] → III. Protocol-Driven Parsing
+  - [PRINCIPLE_4_NAME] → IV. Test-Driven Remediation
+  - [PRINCIPLE_5_NAME] → V. Observability & Logging
+- Added sections: VI. Workflow Selection, Quality Gates by Workflow
+- Removed sections: None
+- Templates requiring updates:
+  - .specify/templates/plan-template.md (✅ updated)
+  - .specify/templates/spec-template.md (✅ updated)
+  - .specify/templates/tasks-template.md (✅ updated)
+  - .specify/templates/checklist-template.md (✅ updated)
+- Follow-up TODOs: None
+-->
+
+# Rostender Parser Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Modular Scraper-First
+Every data source MUST be implemented as a modular scraper strategy (e.g., `scraper/fallbacks/`). Scrapers MUST be self-contained, using `browser.py` for shared Playwright logic, and independently testable against mock HTML/PDF responses.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+### II. Database-Centric Pipeline
+The pipeline stages MUST communicate exclusively via the SQLite database (`db/repository.py`). Each stage MUST be runnable independently, reading its required inputs from the DB and persisting its results for subsequent stages. Direct memory passing between stages is PROHIBITED.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### III. Protocol-Driven Parsing
+Document parsing (PDF/DOCX/HTML) MUST be decoupled from scraper logic. Parsers MUST use defined regex patterns or structured extractors (`parser/`) to return normalized data structures. Handlers for new document formats MUST be added as separate parser modules.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### IV. Test-Driven Remediation
+Bug fixes MUST start with a failing regression test in `tests/` that reproduces the reported issue using captured data or mock responses. New features SHOULD include unit tests for core logic and integration tests for end-to-end stage execution.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### V. Observability & Logging
+All stages MUST use `loguru` for structured logging. Critical failures MUST be logged with enough context (URL, Tender ID, Customer INN) to allow reproduction. The `data/` directory MUST be used for persistent logs and database storage.
 
 ### VI. Workflow Selection
 Development activities SHALL use the appropriate workflow type based on the nature of the work. Each workflow enforces specific quality gates and documentation requirements tailored to its purpose:
@@ -40,19 +48,22 @@ Development activities SHALL use the appropriate workflow type based on the natu
 
 The wrong workflow SHALL NOT be used - features must not bypass specification, bugs must not skip regression tests, and refactorings must not alter behavior.
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+## Implementation Standards
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+### Technology Stack
+- **Runtime**: Python >=3.11 with `uv` for dependency management.
+- **Automation**: Playwright (Chromium) for web scraping.
+- **Persistence**: `aiosqlite` for asynchronous database access.
+- **Reporting**: `openpyxl` for Excel generation.
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+### Security & Credentials
+- Credentials MUST NOT be committed to version control.
+- Use `config.yaml` (excluded via `.gitignore`) with `config.yaml.example` as a template.
+- Secrets MUST be handled as sensitive configuration parameters.
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+## Extension Workflows
 
-### Extension Workflows
+### Command Interface
 - **Bugfix**: `/bugfix "<description>"` → bug-report.md + tasks.md with regression test requirement
 - **Modification**: `/modify <feature_num> "<description>"` → modification.md + impact analysis + tasks.md
 - **Refactor**: `/refactor "<description>"` → refactor.md + baseline metrics + incremental tasks.md
@@ -98,10 +109,6 @@ The wrong workflow SHALL NOT be used - features must not bypass specification, b
 - Stakeholder approvals MUST be obtained before starting
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
+This constitution supersedes all other documentation regarding project standards. Amendments require a version bump and an updated Sync Impact Report.
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
-
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.0.0 | **Ratified**: 2026-03-17 | **Last Amended**: 2026-03-17

@@ -31,7 +31,11 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+- [ ] Modular Scraper-First: Does this feature use modular strategies for data sources?
+- [ ] Database-Centric: Does it communicate via SQLite repository?
+- [ ] Protocol-Driven: Is parsing decoupled from scraping?
+- [ ] Test-Driven: Are regression/unit tests planned?
+- [ ] Observability: Does it use loguru for structured logging?
 
 ## Project Structure
 

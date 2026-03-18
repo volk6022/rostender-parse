@@ -73,6 +73,7 @@ class ProtocolParseResult:
     """Результат парсинга протокола одного тендера."""
 
     tender_id: str
+    session_id: str | None
     participants_count: int | None
     parse_source: str | None  # html | docx | pdf_text | txt
     parse_status: str  # success | failed | skipped_scan | no_protocol
@@ -344,6 +345,7 @@ async def _try_external_fallbacks(
     tender_id: str,
     customer_inn: str,
     conn: aiosqlite.Connection,
+    session_id: str | None = None,
 ) -> ProtocolParseResult | None:
     """Пробует получить протоколы с внешних площадок (EIS, GPB, Rosatom, Roseltorg)."""
     sources = parse_source_urls(source_urls_str)
@@ -398,6 +400,7 @@ async def _try_external_fallbacks(
                     )
                     result = ProtocolParseResult(
                         tender_id=tender_id,
+                        session_id=session_id,
                         participants_count=participant_result.count,
                         parse_source=f"{platform}_{parse_source}",
                         parse_status="success",
@@ -427,6 +430,7 @@ async def analyze_tender_protocol(
     tender_url: str,
     customer_inn: str,
     conn: aiosqlite.Connection,
+    session_id: str | None = None,
 ) -> ProtocolParseResult:
     """Полный цикл анализа протокола одного завершённого тендера.
 
@@ -486,13 +490,14 @@ async def analyze_tender_protocol(
         if source_urls:
             logger.info("tendersData не найден, пробуем внешние площадки...")
             result = await _try_external_fallbacks(
-                page, source_urls, tender_id, customer_inn, conn
+                page, source_urls, tender_id, customer_inn, conn, session_id=session_id
             )
             if result:
                 return result
 
         result = ProtocolParseResult(
             tender_id=tender_id,
+            session_id=session_id,
             participants_count=None,
             parse_source=None,
             parse_status="no_protocol",
@@ -512,13 +517,14 @@ async def analyze_tender_protocol(
                 "Протоколы не найдены на rostender.info, пробуем внешние площадки..."
             )
             result = await _try_external_fallbacks(
-                page, source_urls, tender_id, customer_inn, conn
+                page, source_urls, tender_id, customer_inn, conn, session_id=session_id
             )
             if result:
                 return result
 
         result = ProtocolParseResult(
             tender_id=tender_id,
+            session_id=session_id,
             participants_count=None,
             parse_source=None,
             parse_status="no_protocol",
@@ -629,6 +635,7 @@ async def analyze_tender_protocol(
 
         result = ProtocolParseResult(
             tender_id=tender_id,
+            session_id=session_id,
             participants_count=final_count,
             parse_source=effective_source,
             parse_status="success",
@@ -655,6 +662,7 @@ async def analyze_tender_protocol(
 
     result = ProtocolParseResult(
         tender_id=tender_id,
+        session_id=session_id,
         participants_count=None,
         parse_source=None,
         parse_status=parse_status,
