@@ -91,6 +91,7 @@ async def run_search_active(page: Page, params: PipelineParams) -> None:
                     {
                         "tender_id": t_data["tender_id"],
                         "customer_inn": inn,
+                        "session_id": params.session_id,
                         "url": t_data["url"],
                         "source_urls": source_urls,
                         "title": t_data["title"],
@@ -107,25 +108,29 @@ async def run_search_active(page: Page, params: PipelineParams) -> None:
 
             # 1.4 Сохраняем в БД пакетами каждые 10 штук или в конце
             if len(tenders_to_upsert) >= 10:
-                await _flush_active_batch(conn, tenders_to_upsert, customers_to_upsert)
+                await _flush_active_batch(
+                    conn, tenders_to_upsert, customers_to_upsert, params.session_id
+                )
                 tenders_to_upsert.clear()
                 customers_to_upsert.clear()
 
         # Финальный сброс остатков
         if tenders_to_upsert:
-            await _flush_active_batch(conn, tenders_to_upsert, customers_to_upsert)
+            await _flush_active_batch(
+                conn, tenders_to_upsert, customers_to_upsert, params.session_id
+            )
 
     stats.log_final()
     logger.info("Этап 1: завершён")
 
-    # Генерируем Excel-отчёт со списком активных тендеров
-    await run_active_report(params)
 
-
-async def _flush_active_batch(conn, tenders, customers):
+async def _flush_active_batch(conn, tenders, customers, session_id):
     """Вспомогательная функция для записи пакета в БД."""
     if customers:
-        cust_list = [{"inn": inn, "name": name} for inn, name in customers.items()]
+        cust_list = [
+            {"inn": inn, "name": name, "session_id": session_id}
+            for inn, name in customers.items()
+        ]
         await upsert_customers_batch(conn, cust_list)
 
     if tenders:

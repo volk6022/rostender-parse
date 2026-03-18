@@ -20,11 +20,13 @@
   ============================================================================
 -->
 
-## [Category 1]
+## Constitution Compliance
 
-- [ ] CHK001 First checklist item with clear action
-- [ ] CHK002 Second checklist item
-- [ ] CHK003 Third checklist item
+- [ ] CHK001 Scrapers are decoupled and modular
+- [ ] CHK002 All DB operations use `repository.py`
+- [ ] CHK003 Parsing logic is in `src/parser/`
+- [ ] CHK004 `loguru` used for all critical events
+- [ ] CHK005 Unit/Regression tests cover the new logic
 
 ## [Category 2]
 

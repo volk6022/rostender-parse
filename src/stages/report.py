@@ -43,7 +43,12 @@ async def run_report(params: PipelineParams) -> None:
 
     if "excel" in params.output_formats:
         excel_path = generate_excel_report(
-            interesting_results, all_results, all_customers, all_protocols
+            interesting_results,
+            all_results,
+            all_customers,
+            all_protocols,
+            session_id=params.session_id,
+            stage="final",
         )
         logger.success("Отчёт сохранён: {}", excel_path)
 
@@ -61,6 +66,8 @@ async def run_active_report(params: PipelineParams) -> None:
         t for t in all_active if (t["price"] or 0) >= params.min_price_active
     ]
 
-    report_path = generate_active_tenders_report(filtered_tenders)
+    report_path = generate_active_tenders_report(
+        filtered_tenders, session_id=params.session_id, stage="search-active"
+    )
     if report_path:
         logger.success("Отчёт по активным тендерам готов: {}", report_path)

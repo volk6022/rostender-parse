@@ -60,6 +60,8 @@ def generate_excel_report(
     all_results: Sequence[Any],
     all_customers: Sequence[Any],
     all_protocols: Sequence[Any],
+    session_id: str | None = None,
+    stage: str | None = None,
 ) -> Path:
     wb = Workbook()
     default_sheet = wb.active
@@ -70,12 +72,29 @@ def generate_excel_report(
     _write_customers_sheet(wb, all_customers)
     _write_analysis_details_sheet(wb, all_protocols, all_results)
 
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    filename = f"report_{timestamp}.xlsx"
-    filepath = REPORTS_DIR / filename
-
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    wb.save(filepath)
+
+    # Формируем уникальное имя файла
+    if session_id:
+        base = f"report_{session_id}"
+        if stage:
+            base += f"_{stage}"
+        base += ".xlsx"
+    else:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        base = f"report_{timestamp}.xlsx"
+
+    filepath = REPORTS_DIR / base
+    tmp_filepath = REPORTS_DIR / f"{base}.tmp"
+
+    # Атомарная запись: во временный файл -> rename
+    try:
+        wb.save(tmp_filepath)
+        tmp_filepath.replace(filepath)
+    except Exception:
+        if tmp_filepath.exists():
+            tmp_filepath.unlink()
+        raise
 
     logger.success("Excel-отчёт сохранён: {}", filepath)
     return filepath

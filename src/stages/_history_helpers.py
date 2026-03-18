@@ -103,6 +103,7 @@ async def analyze_tender_history(
         {
             "tender_id": t_data["tender_id"],
             "customer_inn": customer_inn,
+            "session_id": params.session_id,
             "url": t_data["url"],
             "title": t_data["title"],
             "price": t_data["price"],
@@ -127,6 +128,7 @@ async def analyze_tender_history(
                 tender_url=t_data["url"],
                 customer_inn=customer_inn,
                 conn=conn,
+                session_id=params.session_id,
             )
             if result.parse_status == "success":
                 success_count += 1
@@ -158,6 +160,7 @@ async def analyze_tender_history(
             conn,
             active_tender_id=active_tender_id,
             customer_inn=customer_inn,
+            session_id=params.session_id,
             total_historical=metrics.total_historical,
             total_analyzed=metrics.total_analyzed,
             total_skipped=metrics.total_skipped,

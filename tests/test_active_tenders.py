@@ -396,11 +396,13 @@ class TestNavigateToSearch:
         """Navigates to BASE_URL first, then to extended search page."""
         page = AsyncMock()
 
+        # Ensure we patch BEFORE importing the function that uses it
+        mock_goto = AsyncMock()
+        mock_wait = AsyncMock()
+
         with (
-            patch(
-                "src.scraper.active_tenders.safe_goto", new_callable=AsyncMock
-            ) as mock_goto,
-            patch("src.scraper.active_tenders.polite_wait", new_callable=AsyncMock),
+            patch("src.scraper.common.safe_goto", mock_goto),
+            patch("src.scraper.common.polite_wait", mock_wait),
         ):
             from src.scraper.active_tenders import _navigate_to_search
 
@@ -422,9 +424,16 @@ class TestSearchActiveTenders:
     @pytest.mark.asyncio
     async def test_calls_navigate_and_fill_and_submit(self) -> None:
         """Verifies the full search flow: navigate → fill → submit."""
+        # Use a mock that simulates page API correctly for the parts used
         page = AsyncMock()
         page.query_selector_all = AsyncMock(return_value=[])
         page.query_selector = AsyncMock(return_value=None)
+        # Properly mock locator chain: locator('x').filter('y').first
+        mock_locator = MagicMock()
+        mock_filter = MagicMock()
+        mock_filter.first = AsyncMock()  # .first() returns a coroutine
+        mock_locator.filter = MagicMock(return_value=mock_filter)
+        page.locator = MagicMock(return_value=mock_locator)
 
         with (
             patch(
